@@ -31,6 +31,10 @@
     font-weight: 600;
 }
 
+.soc-bar .progress-bar {
+    transition: width 0.6s ease, background-color 0.3s ease;
+}
+
 /* Alarm banner */
 .alarm-banner {
     display: none;
@@ -57,6 +61,13 @@
 .status-dot.offline {
     background-color: #dc3545;
     box-shadow: 0 0 6px rgba(220, 53, 69, 0.5);
+}
+
+/* Responsive metric cards */
+@media (max-width: 575.98px) {
+    .metric-card .metric-value {
+        font-size: 1.5rem;
+    }
 }
 
 /* Placeholder page content */

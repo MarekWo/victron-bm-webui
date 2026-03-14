@@ -14,9 +14,9 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 
 ## Current Status
 
-**Stage 3** — BLE reader with mock mode.
+**Stage 4** — Live dashboard with auto-refreshing data.
 
-The application serves a Bootstrap 5 dark-themed dashboard with navigation between four pages (Dashboard, Trends, Alarm Log, Info). Full YAML configuration, SQLite database, and a background BLE reader thread are in place. Mock mode generates realistic battery data for development. Real BLE mode uses the `victron-ble` library to read from a BMV-712 Smart device.
+The dashboard displays real-time battery metrics (voltage, current, power, SoC, consumed Ah, remaining time, temperature) with AJAX polling every 5 seconds. SoC progress bar with color coding (green >50%, yellow 20-50%, red <20%), alarm banner, and connection status indicator. Background BLE reader collects data (mock mode for development, real BLE via `victron-ble`).
 
 ## Quick Start
 
