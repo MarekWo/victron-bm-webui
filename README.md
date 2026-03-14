@@ -14,9 +14,9 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 
 ## Current Status
 
-**Stage 4** — Live dashboard with auto-refreshing data.
+**Stage 5** — REST API complete.
 
-The dashboard displays real-time battery metrics (voltage, current, power, SoC, consumed Ah, remaining time, temperature) with AJAX polling every 5 seconds. SoC progress bar with color coding (green >50%, yellow 20-50%, red <20%), alarm banner, and connection status indicator. Background BLE reader collects data (mock mode for development, real BLE via `victron-ble`).
+Live dashboard with auto-refreshing metrics and full REST API. Four JSON endpoints: `/api/v1/status` (current state), `/api/v1/history` (historical readings with field filtering and downsampling), `/api/v1/alarms` (alarm log), `/api/v1/health` (system health check).
 
 ## Quick Start
 
@@ -78,6 +78,15 @@ docker compose down
 | `notifications` | `alarm_triggered`, `device_offline`, etc. | Which events trigger emails         |
 
 See `config/config.yaml.example` for all available options with defaults.
+
+## REST API
+
+| Endpoint             | Description                                      |
+|----------------------|--------------------------------------------------|
+| `GET /api/v1/status` | Current device state (voltage, current, SoC, etc.) |
+| `GET /api/v1/history`| Historical readings (`?from=&to=&fields=&resolution=`) |
+| `GET /api/v1/alarms` | Alarm log entries (`?from=&to=&limit=`)          |
+| `GET /api/v1/health` | Health check (uptime, DB stats, BLE status)      |
 
 ## Technology Stack
 
