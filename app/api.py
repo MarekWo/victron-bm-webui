@@ -148,6 +148,28 @@ def health():
     })
 
 
+@api_bp.route("/config")
+def config_info():
+    """Return safe configuration info (no secrets).
+
+    Response:
+        {
+            "smtp_enabled": true,
+            "smtp_recipients": ["user@example.com"],
+            "alarms": {"low_voltage": 11.5, ...}
+        }
+    """
+    config = current_app.config["VICTRON"]
+    smtp = config.get("smtp", {})
+    alarms = config.get("alarms", {})
+
+    return jsonify({
+        "smtp_enabled": smtp.get("enabled", False),
+        "smtp_recipients": smtp.get("recipients", []),
+        "alarms": alarms,
+    })
+
+
 def _downsample(readings: list[dict], resolution: str) -> list[dict]:
     """Downsample readings by averaging within time buckets.
 

@@ -71,7 +71,44 @@ def load_config(path: str | None = None) -> dict[str, Any]:
             user_config = yaml.safe_load(f) or {}
         config = _deep_merge(config, user_config)
 
+    # Apply SMTP overrides from environment variables
+    _apply_smtp_env_overrides(config)
+
     return config
+
+
+def _apply_smtp_env_overrides(config: dict[str, Any]) -> None:
+    """Override SMTP config values from environment variables.
+
+    Environment variables (all optional, only non-empty values are applied):
+        SMTP_ENABLED, SMTP_SERVER, SMTP_PORT, SMTP_USE_TLS,
+        SMTP_USERNAME, SMTP_PASSWORD, SMTP_SENDER_NAME,
+        SMTP_SENDER_EMAIL, SMTP_RECIPIENTS (comma-separated).
+    """
+    smtp = config.setdefault("smtp", {})
+
+    env_map = {
+        "SMTP_ENABLED": ("enabled", lambda v: v.lower() in ("true", "1", "yes")),
+        "SMTP_SERVER": ("server", str),
+        "SMTP_PORT": ("port", int),
+        "SMTP_USE_TLS": ("use_tls", lambda v: v.lower() in ("true", "1", "yes", "auto")),
+        "SMTP_USERNAME": ("username", str),
+        "SMTP_PASSWORD": ("password", str),
+        "SMTP_SENDER_NAME": ("sender_name", str),
+        "SMTP_SENDER_EMAIL": ("sender_email", str),
+    }
+
+    for env_var, (key, converter) in env_map.items():
+        val = os.environ.get(env_var, "").strip()
+        if val:
+            try:
+                smtp[key] = converter(val)
+            except (ValueError, TypeError):
+                pass
+
+    recipients_env = os.environ.get("SMTP_RECIPIENTS", "").strip()
+    if recipients_env:
+        smtp["recipients"] = [r.strip() for r in recipients_env.split(",") if r.strip()]
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

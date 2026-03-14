@@ -6,6 +6,8 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 
 - **Web Dashboard** — real-time battery status (voltage, current, power, SoC, temperature, consumed Ah, remaining time)
 - **Trend Charts** — historical data visualization with selectable metrics and time ranges
+- **Alarm Log** — searchable alarm history with time range filters, pagination, and notification status badges
+- **System Info** — device status, BLE mode, database stats, SMTP config, alarm thresholds at a glance
 - **Email Alerts** — configurable SMTP notifications for alarm conditions (low voltage, low SoC, temperature, device offline)
 - **REST API** — JSON endpoints for integration with external systems
 - **Offline-capable** — all frontend assets (Bootstrap 5, Chart.js) served locally
@@ -14,9 +16,9 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 
 ## Current Status
 
-**Stage 7** — Alarm engine and email notifications.
+**Stage 8** — Alarm Log & Info pages, SMTP via environment variables.
 
-Live dashboard, REST API, trend charts, and alarm system. The alarm engine evaluates readings against configurable thresholds (low/high voltage, low SoC, temperature limits), detects device alarm state changes and offline conditions, logs events to the database, and sends SMTP email notifications with 15-minute cooldown per alarm type.
+All four UI pages are complete: live dashboard, trend charts, alarm log with filters/pagination, and system info page. SMTP email settings can now be configured via `.env` environment variables (overriding `config.yaml`).
 
 ## Quick Start
 
@@ -35,7 +37,7 @@ Live dashboard, REST API, trend charts, and alarm system. The alarm engine evalu
 2. Create your environment file:
    ```bash
    cp .env.example .env
-   # Edit .env if needed (timezone, port)
+   # Edit .env with timezone, port, and SMTP settings
    ```
 
 3. Create your configuration file:
@@ -61,10 +63,21 @@ docker compose down
 
 ### Environment Variables (`.env`)
 
-| Variable   | Default         | Description                          |
-|------------|-----------------|--------------------------------------|
-| `TZ`       | `Europe/Warsaw` | Container timezone                   |
-| `APP_PORT` | `80`            | Host port for the web interface      |
+| Variable           | Default              | Description                          |
+|--------------------|----------------------|--------------------------------------|
+| `TZ`               | `Europe/Warsaw`      | Container timezone                   |
+| `APP_PORT`         | `80`                 | Host port for the web interface      |
+| `SMTP_ENABLED`     | (from config.yaml)   | Enable SMTP notifications (`true`/`false`) |
+| `SMTP_SERVER`      | (from config.yaml)   | SMTP server hostname                 |
+| `SMTP_PORT`        | `587`                | SMTP server port                     |
+| `SMTP_USE_TLS`     | `true`               | Use STARTTLS                         |
+| `SMTP_USERNAME`    | (from config.yaml)   | SMTP authentication username         |
+| `SMTP_PASSWORD`    | (from config.yaml)   | SMTP authentication password         |
+| `SMTP_SENDER_NAME` | `Victron BM Monitor` | Display name for outgoing emails     |
+| `SMTP_SENDER_EMAIL`| (from config.yaml)   | Sender email address                 |
+| `SMTP_RECIPIENTS`  | (from config.yaml)   | Comma-separated recipient emails     |
+
+Environment variables override values from `config/config.yaml`.
 
 ### Application Config (`config/config.yaml`)
 
@@ -81,12 +94,13 @@ See `config/config.yaml.example` for all available options with defaults.
 
 ## REST API
 
-| Endpoint             | Description                                      |
-|----------------------|--------------------------------------------------|
-| `GET /api/v1/status` | Current device state (voltage, current, SoC, etc.) |
-| `GET /api/v1/history`| Historical readings (`?from=&to=&fields=&resolution=`) |
-| `GET /api/v1/alarms` | Alarm log entries (`?from=&to=&limit=`)          |
-| `GET /api/v1/health` | Health check (uptime, DB stats, BLE status)      |
+| Endpoint              | Description                                      |
+|-----------------------|--------------------------------------------------|
+| `GET /api/v1/status`  | Current device state (voltage, current, SoC, etc.) |
+| `GET /api/v1/history` | Historical readings (`?from=&to=&fields=&resolution=`) |
+| `GET /api/v1/alarms`  | Alarm log entries (`?from=&to=&limit=`)          |
+| `GET /api/v1/health`  | Health check (uptime, DB stats, BLE status)      |
+| `GET /api/v1/config`  | Safe configuration info (thresholds, SMTP status) |
 
 ## Technology Stack
 

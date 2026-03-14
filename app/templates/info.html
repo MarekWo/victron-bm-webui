@@ -2,11 +2,166 @@
 {% block title %}Info - victron-bm-webui{% endblock %}
 
 {% block content %}
-<div class="placeholder-content">
-    <div class="text-center text-body-secondary">
-        <i class="bi bi-info-circle display-1 mb-3 d-block"></i>
-        <h5>Device Info</h5>
-        <p>Device information and app status will be available in Stage 8.</p>
+<!-- Header -->
+<div class="row mb-4">
+    <div class="col">
+        <h4 class="mb-0">
+            <i class="bi bi-info-circle text-primary me-2"></i>System Info
+        </h4>
     </div>
 </div>
+
+<div class="row g-4">
+    <!-- Device Info -->
+    <div class="col-12 col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-cpu me-2"></i>Device
+            </div>
+            <div class="card-body">
+                <table class="table table-sm table-borderless mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-body-secondary" style="width: 40%">Name</td>
+                            <td id="info-device-name">-</td>
+                        </tr>
+                        <tr>
+                            <td class="text-body-secondary">Connection</td>
+                            <td id="info-ble-status">-</td>
+                        </tr>
+                        <tr>
+                            <td class="text-body-secondary">Mode</td>
+                            <td id="info-ble-mode">-</td>
+                        </tr>
+                        <tr>
+                            <td class="text-body-secondary">Last Update</td>
+                            <td id="info-last-update">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Info -->
+    <div class="col-12 col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-gear me-2"></i>Application
+            </div>
+            <div class="card-body">
+                <table class="table table-sm table-borderless mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-body-secondary" style="width: 40%">Status</td>
+                            <td id="info-app-status">-</td>
+                        </tr>
+                        <tr>
+                            <td class="text-body-secondary">Uptime</td>
+                            <td id="info-uptime">-</td>
+                        </tr>
+                        <tr>
+                            <td class="text-body-secondary">Server Time</td>
+                            <td id="info-server-time">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database Info -->
+    <div class="col-12 col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-database me-2"></i>Database
+            </div>
+            <div class="card-body">
+                <table class="table table-sm table-borderless mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-body-secondary" style="width: 40%">Readings</td>
+                            <td id="info-readings-count">-</td>
+                        </tr>
+                        <tr>
+                            <td class="text-body-secondary">Alarms</td>
+                            <td id="info-alarms-count">-</td>
+                        </tr>
+                        <tr>
+                            <td class="text-body-secondary">DB Size</td>
+                            <td id="info-db-size">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Config -->
+    <div class="col-12 col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-envelope me-2"></i>Notifications
+            </div>
+            <div class="card-body">
+                <table class="table table-sm table-borderless mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-body-secondary" style="width: 40%">SMTP</td>
+                            <td id="info-smtp-status">-</td>
+                        </tr>
+                        <tr>
+                            <td class="text-body-secondary">Recipients</td>
+                            <td id="info-smtp-recipients">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alarm Thresholds -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-sliders me-2"></i>Alarm Thresholds
+            </div>
+            <div class="card-body">
+                <div class="row g-3" id="info-thresholds">
+                    <div class="col-6 col-md-4 col-lg text-center">
+                        <div class="text-body-secondary small text-uppercase">Low Voltage</div>
+                        <div id="info-th-low-voltage" class="fw-bold">-</div>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg text-center">
+                        <div class="text-body-secondary small text-uppercase">High Voltage</div>
+                        <div id="info-th-high-voltage" class="fw-bold">-</div>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg text-center">
+                        <div class="text-body-secondary small text-uppercase">Low SoC</div>
+                        <div id="info-th-low-soc" class="fw-bold">-</div>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg text-center">
+                        <div class="text-body-secondary small text-uppercase">High Temp</div>
+                        <div id="info-th-high-temperature" class="fw-bold">-</div>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg text-center">
+                        <div class="text-body-secondary small text-uppercase">Low Temp</div>
+                        <div id="info-th-low-temperature" class="fw-bold">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Status footer -->
+<div class="row mt-3">
+    <div class="col text-center text-body-secondary">
+        <small id="info-refresh-status">Loading...</small>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/info.js') }}"></script>
 {% endblock %}
