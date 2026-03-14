@@ -14,9 +14,9 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 
 ## Current Status
 
-**Stage 2** — Configuration and database layer complete.
+**Stage 3** — BLE reader with mock mode.
 
-The application serves a Bootstrap 5 dark-themed dashboard with navigation between four pages (Dashboard, Trends, Alarm Log, Info). Full YAML configuration with all sections (device, BLE, database, alarms, SMTP, notifications) and SQLite database with `readings` and `alarm_log` tables are in place. No BLE communication yet.
+The application serves a Bootstrap 5 dark-themed dashboard with navigation between four pages (Dashboard, Trends, Alarm Log, Info). Full YAML configuration, SQLite database, and a background BLE reader thread are in place. Mock mode generates realistic battery data for development. Real BLE mode uses the `victron-ble` library to read from a BMV-712 Smart device.
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ The application serves a Bootstrap 5 dark-themed dashboard with navigation betwe
 
 1. Clone the repository:
    ```bash
-   git clone git@github.com:<USERNAME>/victron-bm-webui.git
+   git clone git@github.com:MarekWo/victron-bm-webui.git
    cd victron-bm-webui
    ```
 
@@ -82,6 +82,7 @@ See `config/config.yaml.example` for all available options with defaults.
 ## Technology Stack
 
 - Python 3.11 / Flask / Gunicorn
+- victron-ble + bleak (BLE communication)
 - Bootstrap 5.3 (dark theme) + Bootstrap Icons
 - SQLite (WAL mode)
 - Docker + docker-compose

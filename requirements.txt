@@ -1,3 +1,5 @@
 flask==3.1.1
 gunicorn==23.0.0
 pyyaml==6.0.2
+victron-ble==0.9.3
+bleak==0.22.3
