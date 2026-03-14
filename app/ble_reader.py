@@ -115,11 +115,13 @@ class BLEReaderThread(threading.Thread):
         config: dict[str, Any],
         shared_state: SharedState,
         db: Any,
+        alarm_engine: Any = None,
     ) -> None:
         super().__init__(daemon=True, name="ble-reader")
         self.config = config
         self.shared_state = shared_state
         self.db = db
+        self.alarm_engine = alarm_engine
         self._stop_event = threading.Event()
         self._mock_mode = config["device"].get("mock", False)
         self._poll_interval = config["ble"].get("poll_interval_seconds", 10)
@@ -148,6 +150,7 @@ class BLEReaderThread(threading.Thread):
                 data = generator.generate()
                 self.shared_state.update(data)
                 self.db.insert_reading(data)
+                self._evaluate_alarms(data)
                 self._maybe_purge()
             except Exception:
                 log.exception("Error generating mock data")
@@ -235,6 +238,7 @@ class BLEReaderThread(threading.Thread):
 
                 self.shared_state.update(data)
                 self.db.insert_reading(data)
+                self._evaluate_alarms(data)
                 self._maybe_purge()
                 last_reading_time = now
 
@@ -254,6 +258,14 @@ class BLEReaderThread(threading.Thread):
             await asyncio.sleep(1)
 
         await scanner.stop()
+
+    def _evaluate_alarms(self, data: dict[str, Any]) -> None:
+        """Evaluate alarm conditions for the current reading."""
+        if self.alarm_engine is not None:
+            try:
+                self.alarm_engine.evaluate(data)
+            except Exception:
+                log.exception("Error evaluating alarms")
 
     def _maybe_purge(self) -> None:
         """Run retention purge every 100 readings."""

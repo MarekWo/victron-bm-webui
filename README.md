@@ -14,9 +14,9 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 
 ## Current Status
 
-**Stage 6** — Trend charts.
+**Stage 7** — Alarm engine and email notifications.
 
-Live dashboard with auto-refreshing metrics, REST API, and interactive trend charts. The Trends page features dual-axis Chart.js graphs with selectable metrics (voltage, current, power, SoC, consumed Ah, temperature), time range buttons (1h, 6h, 24h, 7d, 30d), and automatic downsampling.
+Live dashboard, REST API, trend charts, and alarm system. The alarm engine evaluates readings against configurable thresholds (low/high voltage, low SoC, temperature limits), detects device alarm state changes and offline conditions, logs events to the database, and sends SMTP email notifications with 15-minute cooldown per alarm type.
 
 ## Quick Start
 
