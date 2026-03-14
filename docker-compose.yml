@@ -1,0 +1,12 @@
+services:
+  victron-bm-webui:
+    build: .
+    container_name: victron-bm-webui
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-80}:80"
+    volumes:
+      - ./data:/data
+      - ./config:/app/config
+    environment:
+      - TZ=${TZ:-Europe/Warsaw}

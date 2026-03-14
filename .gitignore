@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Docker
+data/
+
+# Environment and configuration (contain secrets)
+.env
+config/config.yaml
+
+# Local-only project docs (not needed by end users)
+PRD.md
+IMPLEMENTATION_PLAN.md
+CLAUDE.md
+
+# IDE and tools
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
