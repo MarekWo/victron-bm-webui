@@ -1,6 +1,52 @@
 # victron-bm-webui configuration
+# Copy this file to config.yaml and adjust values as needed.
+
+# Device configuration
+device:
+  mac_address: "D8:AB:02:0C:FE:A4"          # BMV-712 BLE MAC address
+  advertisement_key: "your_advertisement_key" # From VictronConnect
+  name: "BMV-712 Smart"                       # Display name
+  mock: false                                 # true = generate fake data (for development)
+
+# BLE polling settings
+ble:
+  poll_interval_seconds: 10   # How often to read BLE data
 
 # Web server settings
 web:
   host: "0.0.0.0"
   port: 80
+
+# Database settings
+database:
+  path: "/data/victron-bm.db"
+  retention_days: 30          # Delete readings older than this
+
+# Alarm thresholds (set to null to disable individual alarms)
+alarms:
+  low_voltage: 11.5           # Volts
+  high_voltage: 15.0          # Volts
+  low_soc: 20.0               # Percent
+  high_temperature: 45.0      # Celsius
+  low_temperature: 0.0        # Celsius
+
+# SMTP settings for email notifications
+smtp:
+  enabled: false
+  server: "smtp.example.com"
+  port: 587
+  use_tls: true
+  username: "user@example.com"
+  password: "your_password"
+  sender_name: "Victron BM Monitor"
+  sender_email: "victron@example.com"
+  recipients:
+    - "admin@example.com"
+
+# Notification settings (which events trigger emails)
+notifications:
+  alarm_triggered: true       # Device alarm state changes
+  alarm_cleared: true         # Device alarm clears
+  threshold_exceeded: true    # App-defined threshold exceeded
+  device_offline: true        # No BLE data for >5 minutes
+  device_online: true         # BLE data resumes after offline

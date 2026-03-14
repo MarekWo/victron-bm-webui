@@ -14,9 +14,9 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 
 ## Current Status
 
-**Stage 0** — Project skeleton with Docker environment and placeholder UI.
+**Stage 2** — Configuration and database layer complete.
 
-The application currently serves a Bootstrap 5 dark-themed dashboard with navigation between four pages (Dashboard, Trends, Alarm Log, Info). No BLE communication or data storage yet.
+The application serves a Bootstrap 5 dark-themed dashboard with navigation between four pages (Dashboard, Trends, Alarm Log, Info). Full YAML configuration with all sections (device, BLE, database, alarms, SMTP, notifications) and SQLite database with `readings` and `alarm_log` tables are in place. No BLE communication yet.
 
 ## Quick Start
 
@@ -68,13 +68,22 @@ docker compose down
 
 ### Application Config (`config/config.yaml`)
 
-See `config/config.yaml.example` for all available options.
+| Section         | Key Options                          | Description                              |
+|-----------------|--------------------------------------|------------------------------------------|
+| `device`        | `mac_address`, `advertisement_key`, `mock` | BMV-712 BLE device settings         |
+| `ble`           | `poll_interval_seconds`              | BLE polling interval (default: 10s)      |
+| `database`      | `path`, `retention_days`             | SQLite storage (default: 30 days)        |
+| `alarms`        | `low_voltage`, `low_soc`, etc.       | Alarm thresholds (null to disable)       |
+| `smtp`          | `server`, `port`, `use_tls`, etc.    | Email notification settings              |
+| `notifications` | `alarm_triggered`, `device_offline`, etc. | Which events trigger emails         |
+
+See `config/config.yaml.example` for all available options with defaults.
 
 ## Technology Stack
 
 - Python 3.11 / Flask / Gunicorn
 - Bootstrap 5.3 (dark theme) + Bootstrap Icons
-- SQLite (planned)
+- SQLite (WAL mode)
 - Docker + docker-compose
 
 ## License
