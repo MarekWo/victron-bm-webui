@@ -70,6 +70,20 @@
     }
 }
 
+/* Trends chart container */
+.chart-container {
+    position: relative;
+    height: 55vh;
+    min-height: 300px;
+}
+
+@media (max-width: 575.98px) {
+    .chart-container {
+        height: 40vh;
+        min-height: 250px;
+    }
+}
+
 /* Placeholder page content */
 .placeholder-content {
     min-height: 50vh;

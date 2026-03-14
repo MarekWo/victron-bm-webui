@@ -14,9 +14,9 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 
 ## Current Status
 
-**Stage 5** — REST API complete.
+**Stage 6** — Trend charts.
 
-Live dashboard with auto-refreshing metrics and full REST API. Four JSON endpoints: `/api/v1/status` (current state), `/api/v1/history` (historical readings with field filtering and downsampling), `/api/v1/alarms` (alarm log), `/api/v1/health` (system health check).
+Live dashboard with auto-refreshing metrics, REST API, and interactive trend charts. The Trends page features dual-axis Chart.js graphs with selectable metrics (voltage, current, power, SoC, consumed Ah, temperature), time range buttons (1h, 6h, 24h, 7d, 30d), and automatic downsampling.
 
 ## Quick Start
 
@@ -92,6 +92,7 @@ See `config/config.yaml.example` for all available options with defaults.
 
 - Python 3.11 / Flask / Gunicorn
 - victron-ble + bleak (BLE communication)
+- Chart.js 4.x (dual-axis time-series charts)
 - Bootstrap 5.3 (dark theme) + Bootstrap Icons
 - SQLite (WAL mode)
 - Docker + docker-compose

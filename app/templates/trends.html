@@ -2,11 +2,69 @@
 {% block title %}Trends - victron-bm-webui{% endblock %}
 
 {% block content %}
-<div class="placeholder-content">
-    <div class="text-center text-body-secondary">
-        <i class="bi bi-graph-up display-1 mb-3 d-block"></i>
-        <h5>Trends</h5>
-        <p>Historical charts will be available in Stage 6.</p>
+<!-- Controls -->
+<div class="row g-3 mb-4 align-items-end">
+    <!-- Time range buttons -->
+    <div class="col-12 col-md-auto">
+        <label class="form-label text-body-secondary small text-uppercase">Time Range</label>
+        <div id="time-range-btns" class="btn-group w-100" role="group">
+            <button type="button" class="btn btn-outline-primary btn-sm" data-range="1h">1h</button>
+            <button type="button" class="btn btn-outline-primary btn-sm" data-range="6h">6h</button>
+            <button type="button" class="btn btn-outline-primary btn-sm active" data-range="24h">24h</button>
+            <button type="button" class="btn btn-outline-primary btn-sm" data-range="7d">7d</button>
+            <button type="button" class="btn btn-outline-primary btn-sm" data-range="30d">30d</button>
+        </div>
+    </div>
+
+    <!-- Left axis metric -->
+    <div class="col-6 col-md-auto">
+        <label for="metric-left" class="form-label text-body-secondary small text-uppercase">Left Axis</label>
+        <select id="metric-left" class="form-select form-select-sm">
+            <option value="voltage" selected>Voltage (V)</option>
+            <option value="current">Current (A)</option>
+            <option value="power">Power (W)</option>
+            <option value="soc">SoC (%)</option>
+            <option value="consumed_ah">Consumed (Ah)</option>
+            <option value="temperature">Temperature (&deg;C)</option>
+        </select>
+    </div>
+
+    <!-- Right axis metric -->
+    <div class="col-6 col-md-auto">
+        <label for="metric-right" class="form-label text-body-secondary small text-uppercase">Right Axis</label>
+        <select id="metric-right" class="form-select form-select-sm">
+            <option value="">(none)</option>
+            <option value="voltage">Voltage (V)</option>
+            <option value="current">Current (A)</option>
+            <option value="power">Power (W)</option>
+            <option value="soc" selected>SoC (%)</option>
+            <option value="consumed_ah">Consumed (Ah)</option>
+            <option value="temperature">Temperature (&deg;C)</option>
+        </select>
     </div>
 </div>
+
+<!-- Chart -->
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <div class="card-body chart-container">
+                <canvas id="trends-chart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Status -->
+<div class="row mt-3">
+    <div class="col text-center text-body-secondary">
+        <small id="chart-status">Loading chart data...</small>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/chartjs/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/trends.js') }}"></script>
 {% endblock %}
