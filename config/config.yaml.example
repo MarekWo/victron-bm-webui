@@ -1,21 +1,16 @@
 # victron-bm-webui configuration
 # Copy this file to config.yaml and adjust values as needed.
+#
+# Note: Device credentials (MAC, advertisement key) and SMTP settings
+# are configured in .env, not here. See .env.example for details.
 
-# Device configuration
+# Device display name
 device:
-  mac_address: "D8:AB:02:0C:FE:A4"          # BMV-712 BLE MAC address
-  advertisement_key: "your_advertisement_key" # From VictronConnect
-  name: "BMV-712 Smart"                       # Display name
-  mock: false                                 # true = generate fake data (for development)
+  name: "BMV-712 Smart"
 
 # BLE polling settings
 ble:
   poll_interval_seconds: 10   # How often to read BLE data
-
-# Web server settings
-web:
-  host: "0.0.0.0"
-  port: 80
 
 # Database settings
 database:
@@ -29,19 +24,6 @@ alarms:
   low_soc: 20.0               # Percent
   high_temperature: 45.0      # Celsius
   low_temperature: 0.0        # Celsius
-
-# SMTP settings for email notifications
-smtp:
-  enabled: false
-  server: "smtp.example.com"
-  port: 587
-  use_tls: true
-  username: "user@example.com"
-  password: "your_password"
-  sender_name: "Victron BM Monitor"
-  sender_email: "victron@example.com"
-  recipients:
-    - "admin@example.com"
 
 # Notification settings (which events trigger emails)
 notifications:

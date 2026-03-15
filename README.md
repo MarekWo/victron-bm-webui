@@ -10,16 +10,9 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 - **System Info** — device status, BLE mode, database stats, SMTP config, alarm thresholds at a glance
 - **Email Alerts** — configurable SMTP notifications for alarm conditions (low voltage, low SoC, temperature, device offline)
 - **REST API** — JSON endpoints for integration with external systems
-- **Real BLE** — connects to a Victron BMV-712 Smart via Bluetooth Low Energy
 - **Offline-capable** — all frontend assets (Bootstrap 5, Chart.js) served locally
 - **Responsive** — optimized for desktop, tablet, and mobile devices
 - **Dockerized** — single-command deployment with docker-compose
-
-## Current Status
-
-**Stage 9** — Real BLE integration and production deployment.
-
-All features complete: live dashboard, trend charts, alarm log, system info, alarm engine with email notifications, REST API, and real BLE device connectivity. Ready for production deployment.
 
 ## Quick Start
 
@@ -36,41 +29,10 @@ All features complete: live dashboard, trend charts, alarm log, system info, ala
    cd victron-bm-webui
    ```
 
-2. Create your environment file:
+2. Create configuration files:
    ```bash
    cp .env.example .env
-   # Default: mock mode enabled, no BLE required
-   ```
-
-3. Create your configuration file:
-   ```bash
    cp config/config.yaml.example config/config.yaml
-   ```
-
-4. Build and run:
-   ```bash
-   docker compose up --build -d
-   ```
-
-5. Open http://localhost in your browser.
-
-### Production Setup (Real BLE)
-
-1. Clone and configure:
-   ```bash
-   git clone https://github.com/MarekWo/victron-bm-webui.git
-   cd victron-bm-webui
-   cp .env.example .env
-   cp config/config.yaml.example config/config.yaml
-   ```
-
-2. Edit `.env` with your settings:
-   ```bash
-   DEVICE_MOCK=false
-   BLE_MAC_ADDRESS=D8:AB:02:0C:FE:A4
-   BLE_ADV_KEY=your_advertisement_key_hex
-   COMPOSE_FILE=docker-compose.yml:docker-compose.ble.yml
-   # + SMTP settings
    ```
 
 3. Build and run:
@@ -78,7 +40,46 @@ All features complete: live dashboard, trend charts, alarm log, system info, ala
    docker compose up --build -d
    ```
 
-The BLE override (`docker-compose.ble.yml`) adds `network_mode: host`, D-Bus access, and privileged mode required for Bluetooth.
+4. Open http://localhost in your browser.
+
+### Production Setup (Real BLE)
+
+1. Clone and create configuration files:
+   ```bash
+   git clone https://github.com/MarekWo/victron-bm-webui.git
+   cd victron-bm-webui
+   cp .env.example .env
+   cp config/config.yaml.example config/config.yaml
+   ```
+
+2. Edit `.env` — set BLE credentials and enable real device mode:
+   ```
+   DEVICE_MOCK=false
+   BLE_MAC_ADDRESS=D8:AB:02:0C:FE:A4
+   BLE_ADV_KEY=your_advertisement_key_hex
+   COMPOSE_FILE=docker-compose.yml:docker-compose.ble.yml
+   ```
+   The advertisement key can be obtained from the VictronConnect app.
+
+3. Optionally configure SMTP notifications in `.env`:
+   ```
+   SMTP_ENABLED=true
+   SMTP_SERVER=smtp.example.com
+   SMTP_PORT=587
+   SMTP_USERNAME=user
+   SMTP_PASSWORD=secret
+   SMTP_SENDER_EMAIL=victron@example.com
+   SMTP_RECIPIENTS=admin@example.com
+   ```
+
+4. Optionally adjust alarm thresholds and other behavior in `config/config.yaml`.
+
+5. Build and run:
+   ```bash
+   docker compose up --build -d
+   ```
+
+The BLE override (`docker-compose.ble.yml`) adds `network_mode: host`, D-Bus access, and privileged mode required for Bluetooth on Linux.
 
 ### Stopping
 
@@ -88,12 +89,16 @@ docker compose down
 
 ## Configuration
 
-### Environment Variables (`.env`)
+Configuration is split into two files by purpose:
+
+### `.env` — Infrastructure and Secrets
+
+Contains Docker settings, device credentials, and SMTP credentials. These are values that differ between environments and/or contain secrets.
 
 | Variable           | Default              | Description                          |
 |--------------------|----------------------|--------------------------------------|
 | `TZ`               | `Europe/Warsaw`      | Container timezone                   |
-| `APP_PORT`         | `80`                 | Host port (ignored in BLE/host mode) |
+| `APP_PORT`         | `80`                 | Listening port (also used inside container) |
 | `DEVICE_MOCK`      | `true`               | Use mock data (`false` for real BLE) |
 | `BLE_MAC_ADDRESS`  |                      | Victron device MAC address           |
 | `BLE_ADV_KEY`      |                      | BLE advertisement encryption key     |
@@ -108,20 +113,19 @@ docker compose down
 | `SMTP_SENDER_EMAIL`|                      | Sender email address                 |
 | `SMTP_RECIPIENTS`  |                      | Comma-separated recipient emails     |
 
-Environment variables override values from `config/config.yaml`.
+### `config/config.yaml` — Application Behavior
 
-### Application Config (`config/config.yaml`)
+Contains settings that control how the application behaves. These typically stay the same across environments.
 
-| Section         | Key Options                          | Description                              |
-|-----------------|--------------------------------------|------------------------------------------|
-| `device`        | `mac_address`, `advertisement_key`, `mock` | BMV-712 BLE device settings         |
-| `ble`           | `poll_interval_seconds`              | BLE polling interval (default: 10s)      |
-| `database`      | `path`, `retention_days`             | SQLite storage (default: 30 days)        |
-| `alarms`        | `low_voltage`, `low_soc`, etc.       | Alarm thresholds (null to disable)       |
-| `smtp`          | `server`, `port`, `use_tls`, etc.    | Email notification settings              |
-| `notifications` | `alarm_triggered`, `device_offline`, etc. | Which events trigger emails         |
+| Section         | Key Options                              | Description                              |
+|-----------------|------------------------------------------|------------------------------------------|
+| `device`        | `name`                                   | Device display name                      |
+| `ble`           | `poll_interval_seconds`                  | BLE polling interval (default: 10s)      |
+| `database`      | `path`, `retention_days`                 | SQLite storage (default: 30 days)        |
+| `alarms`        | `low_voltage`, `low_soc`, etc.           | Alarm thresholds (set to `null` to disable) |
+| `notifications` | `alarm_triggered`, `device_offline`, etc.| Which events trigger emails              |
 
-See `config/config.yaml.example` for all available options with defaults.
+See [`config/config.yaml.example`](config/config.yaml.example) for all options with defaults.
 
 ## REST API
 
@@ -131,7 +135,7 @@ See `config/config.yaml.example` for all available options with defaults.
 | `GET /api/v1/history` | Historical readings (`?from=&to=&fields=&resolution=`) |
 | `GET /api/v1/alarms`  | Alarm log entries (`?from=&to=&limit=`)          |
 | `GET /api/v1/health`  | Health check (uptime, DB stats, BLE status)      |
-| `GET /api/v1/config`  | Safe configuration info (thresholds, SMTP status) |
+| `GET /api/v1/config`  | Configuration info (thresholds, SMTP status)     |
 
 ## Technology Stack
 
@@ -144,4 +148,4 @@ See `config/config.yaml.example` for all available options with defaults.
 
 ## License
 
-TBD
+MIT
