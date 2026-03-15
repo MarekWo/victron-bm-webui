@@ -4,6 +4,7 @@ Reads data from a Victron BMV-712 Smart battery monitor via BLE,
 or generates mock data for development when device.mock is enabled.
 """
 
+import asyncio
 import logging
 import math
 import random
@@ -173,8 +174,6 @@ class BLEReaderThread(threading.Thread):
             return
 
         log.info("BLE reader: scanning for device %s", mac_address)
-
-        import asyncio
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
