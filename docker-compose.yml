@@ -4,12 +4,13 @@ services:
     container_name: victron-bm-webui
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-80}:80"
+      - "${APP_PORT:-80}:${APP_PORT:-80}"
     volumes:
       - ./data:/data
       - ./config:/app/config
     environment:
       - TZ=${TZ:-Europe/Warsaw}
+      - APP_PORT=${APP_PORT:-80}
       - DEVICE_MOCK=${DEVICE_MOCK:-true}
       - BLE_MAC_ADDRESS=${BLE_MAC_ADDRESS:-}
       - BLE_ADV_KEY=${BLE_ADV_KEY:-}

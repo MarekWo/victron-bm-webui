@@ -17,6 +17,7 @@ COPY app/ app/
 # Create data directory
 RUN mkdir -p /data
 
-EXPOSE 80
+ENV APP_PORT=80
+EXPOSE ${APP_PORT}
 
-CMD ["gunicorn", "--bind", "0.0.0.0:80", "--workers", "1", "--threads", "2", "app:create_app()"]
+CMD sh -c "gunicorn --bind 0.0.0.0:${APP_PORT} --workers 1 --threads 2 'app:create_app()'"
