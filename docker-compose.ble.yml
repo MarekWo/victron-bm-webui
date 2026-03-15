@@ -1,0 +1,12 @@
+# BLE override for production (real Victron device via Bluetooth).
+# Activated automatically when COMPOSE_FILE includes this file in .env.
+#
+# Usage in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ble.yml
+
+services:
+  victron-bm-webui:
+    network_mode: host
+    privileged: true
+    volumes:
+      - /var/run/dbus:/var/run/dbus:ro

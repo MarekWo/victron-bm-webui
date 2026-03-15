@@ -16,10 +16,11 @@ data/
 .env
 config/config.yaml
 
-# Local-only project docs (not needed by end users)
+# Local-only project docs and test scripts
 PRD.md
 IMPLEMENTATION_PLAN.md
 CLAUDE.md
+test_ble_local.py
 
 # IDE and tools
 .vscode/

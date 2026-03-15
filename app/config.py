@@ -71,10 +71,32 @@ def load_config(path: str | None = None) -> dict[str, Any]:
             user_config = yaml.safe_load(f) or {}
         config = _deep_merge(config, user_config)
 
-    # Apply SMTP overrides from environment variables
+    # Apply environment variable overrides
+    _apply_device_env_overrides(config)
     _apply_smtp_env_overrides(config)
 
     return config
+
+
+def _apply_device_env_overrides(config: dict[str, Any]) -> None:
+    """Override device config values from environment variables.
+
+    Environment variables (all optional, only non-empty values are applied):
+        DEVICE_MOCK, BLE_MAC_ADDRESS, BLE_ADV_KEY.
+    """
+    device = config.setdefault("device", {})
+
+    mac = os.environ.get("BLE_MAC_ADDRESS", "").strip()
+    if mac:
+        device["mac_address"] = mac
+
+    adv_key = os.environ.get("BLE_ADV_KEY", "").strip()
+    if adv_key:
+        device["advertisement_key"] = adv_key
+
+    mock_val = os.environ.get("DEVICE_MOCK", "").strip()
+    if mock_val:
+        device["mock"] = mock_val.lower() in ("true", "1", "yes")
 
 
 def _apply_smtp_env_overrides(config: dict[str, Any]) -> None:

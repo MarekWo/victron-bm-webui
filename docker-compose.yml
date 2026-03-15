@@ -10,6 +10,9 @@ services:
       - ./config:/app/config
     environment:
       - TZ=${TZ:-Europe/Warsaw}
+      - DEVICE_MOCK=${DEVICE_MOCK:-true}
+      - BLE_MAC_ADDRESS=${BLE_MAC_ADDRESS:-}
+      - BLE_ADV_KEY=${BLE_ADV_KEY:-}
       - SMTP_ENABLED=${SMTP_ENABLED:-}
       - SMTP_SERVER=${SMTP_SERVER:-}
       - SMTP_PORT=${SMTP_PORT:-}
