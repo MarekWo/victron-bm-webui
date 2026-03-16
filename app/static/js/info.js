@@ -146,6 +146,8 @@
                             formatThreshold(config.alarms.high_temperature, "\u00B0C"));
                         setHtml("info-th-low-temperature",
                             formatThreshold(config.alarms.low_temperature, "\u00B0C"));
+                        setHtml("info-th-ac-power-voltage",
+                            formatThreshold(config.alarms.ac_power_voltage, "V"));
                     }
                 }
 

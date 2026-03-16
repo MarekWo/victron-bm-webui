@@ -51,6 +51,8 @@
     function getAlarmBadgeClass(alarmType) {
         if (!alarmType) return "bg-secondary";
         var t = alarmType.toUpperCase();
+        if (t.indexOf("AC_POWER_LOST") >= 0) return "bg-danger";
+        if (t.indexOf("AC_POWER_RESTORED") >= 0) return "bg-success";
         if (t.indexOf("OFFLINE") >= 0) return "bg-danger";
         if (t.indexOf("ONLINE") >= 0) return "bg-success";
         if (t.indexOf("CLEARED") >= 0) return "bg-info";

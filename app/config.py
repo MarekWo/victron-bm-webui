@@ -29,6 +29,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "low_soc": 20.0,
         "high_temperature": 45.0,
         "low_temperature": 0.0,
+        "ac_power_voltage": None,
     },
     "smtp": {
         "enabled": False,
@@ -47,6 +48,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "threshold_exceeded": True,
         "device_offline": True,
         "device_online": True,
+        "ac_power_lost": True,
+        "ac_power_restored": True,
     },
 }
 

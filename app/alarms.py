@@ -37,6 +37,7 @@ class AlarmEngine:
         self._previous_device_alarm: str | None = None
         self._device_offline: bool = False
         self._last_data_time: float = 0.0
+        self._ac_power_on: bool | None = None  # None = unknown (first reading)
 
     def evaluate(self, data: dict[str, Any]) -> None:
         """Evaluate a new reading for alarm conditions.
@@ -61,6 +62,9 @@ class AlarmEngine:
 
         # Check app-defined thresholds
         self._check_thresholds(data)
+
+        # Check AC power status via voltage threshold
+        self._check_ac_power(data)
 
     def check_offline(self) -> None:
         """Check if the device has gone offline (no data for >5 minutes).
@@ -136,6 +140,47 @@ class AlarmEngine:
                 alarm_type = f"THRESHOLD_{threshold_key.upper()}"
                 message = msg_fn(value, threshold)
                 self._fire_alarm(alarm_type, message)
+
+    def _check_ac_power(self, data: dict[str, Any]) -> None:
+        """Detect AC power loss/restore based on voltage threshold.
+
+        When battery is on float charge (AC present), voltage stays high
+        (e.g., ~13.9V). When AC is lost, voltage drops sharply. This method
+        tracks state transitions and fires alarms accordingly.
+        """
+        threshold = self._alarm_config.get("ac_power_voltage")
+        if threshold is None:
+            return
+
+        voltage = data.get("voltage")
+        if voltage is None:
+            return
+
+        power_on = voltage >= threshold
+
+        if self._ac_power_on is None:
+            # First reading — set initial state silently
+            self._ac_power_on = power_on
+            return
+
+        if self._ac_power_on and not power_on:
+            # Transition: ON → OFF (power lost)
+            self._ac_power_on = False
+            if self._notif_config.get("ac_power_lost", True):
+                self._fire_alarm(
+                    "AC_POWER_LOST",
+                    f"AC power lost — battery voltage {voltage:.2f}V "
+                    f"dropped below threshold {threshold}V.",
+                )
+        elif not self._ac_power_on and power_on:
+            # Transition: OFF → ON (power restored)
+            self._ac_power_on = True
+            if self._notif_config.get("ac_power_restored", True):
+                self._fire_alarm(
+                    "AC_POWER_RESTORED",
+                    f"AC power restored — battery voltage {voltage:.2f}V "
+                    f"is back above threshold {threshold}V.",
+                )
 
     def _fire_alarm(self, alarm_type: str, message: str) -> None:
         """Log an alarm and optionally send email notification.

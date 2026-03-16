@@ -24,6 +24,7 @@ alarms:
   low_soc: 20.0               # Percent
   high_temperature: 45.0      # Celsius
   low_temperature: 0.0        # Celsius
+  ac_power_voltage: null      # Volts - AC power lost if voltage drops below (e.g., 13.60)
 
 # Notification settings (which events trigger emails)
 notifications:
@@ -32,3 +33,5 @@ notifications:
   threshold_exceeded: true    # App-defined threshold exceeded
   device_offline: true        # No BLE data for >5 minutes
   device_online: true         # BLE data resumes after offline
+  ac_power_lost: true         # Voltage drops below ac_power_voltage threshold
+  ac_power_restored: true     # Voltage returns above ac_power_voltage threshold
