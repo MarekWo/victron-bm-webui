@@ -17,6 +17,7 @@ COPY app/ app/
 # Create data directory
 RUN mkdir -p /data
 
+ENV PYTHONUNBUFFERED=1
 ENV APP_PORT=80
 EXPOSE ${APP_PORT}
 

@@ -15,6 +15,12 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
+# How long without a BLE reading before restarting the scanner
+SCANNER_WATCHDOG_SECONDS = 120
+
+# How long to wait before retrying after a scanner failure
+SCANNER_RETRY_DELAY_SECONDS = 10
+
 
 class SharedState:
     """Thread-safe container for the latest BLE reading."""
@@ -152,6 +158,7 @@ class BLEReaderThread(threading.Thread):
                 self.shared_state.update(data)
                 self.db.insert_reading(data)
                 self._evaluate_alarms(data)
+                self._check_offline()
                 self._maybe_purge()
             except Exception:
                 log.exception("Error generating mock data")
@@ -159,7 +166,7 @@ class BLEReaderThread(threading.Thread):
             self._stop_event.wait(self._poll_interval)
 
     def _run_real(self) -> None:
-        """Read BLE data from the Victron device."""
+        """Read BLE data from the Victron device with auto-restart on failure."""
         mac_address = self.config["device"].get("mac_address", "")
         adv_key = self.config["device"].get("advertisement_key", "")
 
@@ -168,29 +175,46 @@ class BLEReaderThread(threading.Thread):
             return
 
         try:
-            from victron_ble.scanner import Scanner
+            from victron_ble.scanner import Scanner  # noqa: F401
         except ImportError:
             log.error("victron-ble library not installed. Install with: pip install victron-ble")
             return
 
-        log.info("BLE reader: scanning for device %s", mac_address)
+        # Outer retry loop — restarts the scanner on failure or watchdog timeout
+        attempt = 0
+        while not self._stop_event.is_set():
+            attempt += 1
+            log.info(
+                "BLE reader: starting scanner for %s (attempt %d)",
+                mac_address, attempt,
+            )
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-        try:
-            loop.run_until_complete(self._ble_scan_loop(mac_address, adv_key))
-        except Exception:
-            log.exception("BLE scan loop failed")
-        finally:
-            loop.close()
+            try:
+                loop.run_until_complete(self._ble_scan_loop(mac_address, adv_key))
+            except Exception:
+                log.exception("BLE scan loop failed")
+            finally:
+                loop.close()
+
+            if self._stop_event.is_set():
+                break
+
+            self.shared_state.set_disconnected()
+            log.warning(
+                "BLE scanner stopped, restarting in %ds...",
+                SCANNER_RETRY_DELAY_SECONDS,
+            )
+            self._stop_event.wait(SCANNER_RETRY_DELAY_SECONDS)
 
     async def _ble_scan_loop(self, mac_address: str, adv_key: str) -> None:
-        """Async BLE scanning loop using victron-ble."""
+        """Async BLE scanning loop with watchdog for stall detection."""
         from bleak import BleakScanner
         from victron_ble.devices import detect_device_type
 
-        last_reading_time = 0.0
+        last_reading_time = time.time()
 
         def callback(device: Any, advertisement_data: Any) -> None:
             nonlocal last_reading_time
@@ -237,7 +261,7 @@ class BLEReaderThread(threading.Thread):
 
                 self.shared_state.update(data)
                 self.db.insert_reading(data)
-                self._evaluate_alarms(data)
+                self._evaluate_alarms_async(data)
                 self._maybe_purge()
                 last_reading_time = now
 
@@ -252,19 +276,57 @@ class BLEReaderThread(threading.Thread):
 
         scanner = BleakScanner(detection_callback=callback)
         await scanner.start()
+        log.info("BLE scanner started, waiting for advertisements...")
 
-        while not self._stop_event.is_set():
-            await asyncio.sleep(1)
+        try:
+            while not self._stop_event.is_set():
+                await asyncio.sleep(1)
 
-        await scanner.stop()
+                # Periodically check for offline condition
+                self._check_offline()
+
+                # Watchdog: if no reading for too long, restart scanner
+                elapsed = time.time() - last_reading_time
+                if elapsed > SCANNER_WATCHDOG_SECONDS:
+                    log.warning(
+                        "BLE watchdog: no data for %ds, restarting scanner",
+                        int(elapsed),
+                    )
+                    self.shared_state.set_disconnected()
+                    break
+        finally:
+            await scanner.stop()
 
     def _evaluate_alarms(self, data: dict[str, Any]) -> None:
-        """Evaluate alarm conditions for the current reading."""
+        """Evaluate alarm conditions for the current reading (synchronous)."""
         if self.alarm_engine is not None:
             try:
                 self.alarm_engine.evaluate(data)
             except Exception:
                 log.exception("Error evaluating alarms")
+
+    def _evaluate_alarms_async(self, data: dict[str, Any]) -> None:
+        """Evaluate alarms in a separate thread to avoid blocking the event loop.
+
+        This is used from the BLE callback which runs inside the async event loop.
+        Blocking operations (like SMTP email sending) would stall the scanner.
+        """
+        if self.alarm_engine is not None:
+            t = threading.Thread(
+                target=self._evaluate_alarms,
+                args=(data,),
+                daemon=True,
+                name="alarm-eval",
+            )
+            t.start()
+
+    def _check_offline(self) -> None:
+        """Delegate offline check to the alarm engine."""
+        if self.alarm_engine is not None:
+            try:
+                self.alarm_engine.check_offline()
+            except Exception:
+                log.exception("Error checking offline status")
 
     def _maybe_purge(self) -> None:
         """Run retention purge every 100 readings."""
