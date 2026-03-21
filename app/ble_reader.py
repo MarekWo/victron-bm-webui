@@ -21,6 +21,9 @@ SCANNER_WATCHDOG_SECONDS = 120
 # How long to wait before retrying after a scanner failure
 SCANNER_RETRY_DELAY_SECONDS = 10
 
+# How long to wait for scanner.stop() before giving up
+SCANNER_STOP_TIMEOUT_SECONDS = 10
+
 
 class SharedState:
     """Thread-safe container for the latest BLE reading."""
@@ -197,7 +200,21 @@ class BLEReaderThread(threading.Thread):
             except Exception:
                 log.exception("BLE scan loop failed")
             finally:
+                # Force-close all pending tasks to prevent event loop leaks
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                 loop.close()
+
+                # Reset bleak's global D-Bus manager to clear stale state
+                try:
+                    from bleak.backends.bluezdbus import manager as _mgr
+                    _mgr._global_instances.clear()
+                    log.debug("Cleared bleak D-Bus manager cache")
+                except Exception:
+                    pass  # Not critical — best effort cleanup
 
             if self._stop_event.is_set():
                 break
@@ -295,7 +312,13 @@ class BLEReaderThread(threading.Thread):
                     self.shared_state.set_disconnected()
                     break
         finally:
-            await scanner.stop()
+            try:
+                await asyncio.wait_for(scanner.stop(), timeout=SCANNER_STOP_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                log.warning("BLE scanner.stop() timed out after %ds, forcing restart",
+                            SCANNER_STOP_TIMEOUT_SECONDS)
+            except Exception:
+                log.warning("BLE scanner.stop() failed (ignored)", exc_info=True)
 
     def _evaluate_alarms(self, data: dict[str, Any]) -> None:
         """Evaluate alarm conditions for the current reading (synchronous)."""
