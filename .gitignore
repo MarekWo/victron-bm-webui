@@ -20,6 +20,7 @@ config/config.yaml
 PRD.md
 IMPLEMENTATION_PLAN.md
 CLAUDE.md
+INTEGRATION.md
 test_ble_local.py
 
 # IDE and tools
