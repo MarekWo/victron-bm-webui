@@ -1,0 +1,20 @@
+[Unit]
+Description=victron-bm-webui Container Watchdog
+Documentation=https://github.com/MarekWo/victron-bm-webui
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Environment=VICTRON_DIR=/opt/victron-bm-webui
+Environment=CHECK_INTERVAL=30
+Environment=LOG_FILE=/var/log/victron-bm-watchdog.log
+Environment=HTTP_PORT=5052
+Environment=BT_ADAPTER=hci0
+ExecStart=/usr/bin/python3 -u /opt/victron-bm-webui/scripts/watchdog/watchdog.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,7 @@ device:
 # BLE polling settings
 ble:
   poll_interval_seconds: 10   # How often to read BLE data
+  max_scanner_restarts: 3     # Consecutive scanner failures before process exit (Docker restarts container)
 
 # Database settings
 database:

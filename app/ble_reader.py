@@ -7,7 +7,9 @@ or generates mock data for development when device.mock is enabled.
 import asyncio
 import logging
 import math
+import os
 import random
+import signal
 import threading
 import time
 from datetime import datetime, timezone
@@ -137,6 +139,8 @@ class BLEReaderThread(threading.Thread):
         self._poll_interval = config["ble"].get("poll_interval_seconds", 10)
         self._retention_days = config["database"].get("retention_days", 30)
         self._purge_counter = 0
+        self._max_restarts = config["ble"].get("max_scanner_restarts", 3)
+        self._consecutive_failures = 0
 
     def run(self) -> None:
         """Main loop: read BLE data or generate mock data."""
@@ -219,9 +223,24 @@ class BLEReaderThread(threading.Thread):
             if self._stop_event.is_set():
                 break
 
+            self._consecutive_failures += 1
             self.shared_state.set_disconnected()
+
+            if self._consecutive_failures >= self._max_restarts:
+                log.critical(
+                    "BLE recovery failed after %d consecutive attempts — "
+                    "terminating process for container restart",
+                    self._consecutive_failures,
+                )
+                # Give log time to flush
+                time.sleep(1)
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
+
             log.warning(
-                "BLE scanner stopped, restarting in %ds...",
+                "BLE scanner stopped (failure %d/%d), restarting in %ds...",
+                self._consecutive_failures,
+                self._max_restarts,
                 SCANNER_RETRY_DELAY_SECONDS,
             )
             self._stop_event.wait(SCANNER_RETRY_DELAY_SECONDS)
@@ -280,6 +299,7 @@ class BLEReaderThread(threading.Thread):
                 self.db.insert_reading(data)
                 self._evaluate_alarms_async(data)
                 self._maybe_purge()
+                self._consecutive_failures = 0
                 last_reading_time = now
 
                 log.debug(

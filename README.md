@@ -127,6 +127,41 @@ Contains settings that control how the application behaves. These typically stay
 
 See [`config/config.yaml.example`](config/config.yaml.example) for all options with defaults.
 
+## BLE Reliability & Watchdog
+
+BLE connections can stall over time due to BlueZ/D-Bus issues. The app has two layers of protection:
+
+### Internal Watchdog (built-in)
+
+The BLE reader detects stale connections (no data for 120s) and restarts the scanner. After `max_scanner_restarts` consecutive failures (default: 3), it terminates the process. Docker's `restart: unless-stopped` policy automatically restarts the container with a clean BLE stack.
+
+The Dockerfile includes a `HEALTHCHECK` that monitors BLE connectivity — Docker marks the container as unhealthy after 5 minutes of disconnection.
+
+### External Watchdog (systemd service)
+
+For production, install the external watchdog for additional resilience:
+
+```bash
+cd /opt/victron-bm-webui/scripts/watchdog
+sudo ./install.sh
+```
+
+The watchdog service:
+- Checks container health every 30 seconds
+- Restarts the container when Docker HEALTHCHECK reports unhealthy
+- Resets the Bluetooth adapter (`hci0`) after 3 failed restarts in 10 minutes
+- Saves diagnostic logs before each restart to `/tmp/victron-bm-watchdog-*.log`
+- Exposes a status endpoint at `http://localhost:5052/status`
+
+Useful commands:
+```bash
+systemctl status victron-bm-watchdog       # Service status
+tail -f /var/log/victron-bm-watchdog.log   # Watchdog logs
+curl http://localhost:5052/status           # Container status (JSON)
+curl http://localhost:5052/history          # Restart history
+sudo ./install.sh --uninstall              # Remove
+```
+
 ## REST API
 
 | Endpoint              | Description                                      |

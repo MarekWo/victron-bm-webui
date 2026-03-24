@@ -14,6 +14,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "ble": {
         "poll_interval_seconds": 10,
+        "max_scanner_restarts": 3,
     },
     "web": {
         "host": "0.0.0.0",
