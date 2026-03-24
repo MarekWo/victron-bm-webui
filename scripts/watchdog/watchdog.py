@@ -23,11 +23,14 @@ Configuration via environment variables:
 
 import json
 import os
+import smtplib
 import subprocess
 import sys
 import threading
 import time
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Configuration
@@ -39,10 +42,93 @@ BT_ADAPTER = os.environ.get("BT_ADAPTER", "hci0")
 
 CONTAINER_NAME = "victron-bm-webui"
 
+# SMTP configuration (loaded from .env at startup)
+smtp_config = {}
+
 # Global state
 last_check_time = None
 last_check_result = {}
 restart_history = []
+
+
+def load_smtp_config() -> dict:
+    """Load SMTP configuration from the project's .env file."""
+    env_file = os.path.join(VICTRON_DIR, ".env")
+    config = {}
+
+    if not os.path.exists(env_file):
+        return config
+
+    env_vars = {}
+    try:
+        with open(env_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    env_vars[key.strip()] = value.strip().strip("'\"")
+    except Exception as e:
+        log(f"Failed to read .env file: {e}", "WARN")
+        return config
+
+    config["enabled"] = env_vars.get("SMTP_ENABLED", "").lower() in ("true", "1", "yes")
+    config["server"] = env_vars.get("SMTP_SERVER", "")
+    config["port"] = int(env_vars.get("SMTP_PORT", "587") or "587")
+    config["use_tls"] = env_vars.get("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes")
+    config["username"] = env_vars.get("SMTP_USERNAME", "")
+    config["password"] = env_vars.get("SMTP_PASSWORD", "")
+    config["sender_name"] = env_vars.get("SMTP_SENDER_NAME", "Victron BM Watchdog")
+    config["sender_email"] = env_vars.get("SMTP_SENDER_EMAIL", "")
+    recipients_str = env_vars.get("SMTP_RECIPIENTS", "")
+    config["recipients"] = [r.strip() for r in recipients_str.split(",") if r.strip()]
+
+    return config
+
+
+def send_notification(subject: str, body: str) -> bool:
+    """Send an email notification using SMTP config from .env."""
+    if not smtp_config.get("enabled"):
+        return False
+
+    recipients = smtp_config.get("recipients", [])
+    server_host = smtp_config.get("server", "")
+    if not recipients or not server_host:
+        return False
+
+    sender_name = smtp_config.get("sender_name", "Victron BM Watchdog")
+    sender_email = smtp_config.get("sender_email", "")
+
+    msg = MIMEMultipart()
+    msg["From"] = f"{sender_name} <{sender_email}>"
+    msg["To"] = ", ".join(recipients)
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    try:
+        port = smtp_config.get("port", 587)
+        if smtp_config.get("use_tls", True):
+            server = smtplib.SMTP(server_host, port, timeout=30)
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+        else:
+            server = smtplib.SMTP(server_host, port, timeout=30)
+            server.ehlo()
+
+        username = smtp_config.get("username", "")
+        password = smtp_config.get("password", "")
+        if username and password:
+            server.login(username, password)
+
+        server.sendmail(sender_email, recipients, msg.as_string())
+        server.quit()
+        log(f"Email sent: {subject}")
+        return True
+    except Exception as e:
+        log(f"Failed to send email: {e}", "ERROR")
+        return False
 
 
 def log(message: str, level: str = "INFO"):
@@ -247,7 +333,9 @@ def handle_unhealthy(status: dict):
     recent = count_recent_restarts(minutes=10)
     restart_success = False
 
+    bt_reset = False
     if recent >= 3:
+        bt_reset = True
         log(
             f"{CONTAINER_NAME} restarted {recent} times in last 10 min — "
             f"resetting Bluetooth adapter before restart",
@@ -260,12 +348,28 @@ def handle_unhealthy(status: dict):
     else:
         restart_success = restart_container()
 
+    # Send email notification about the restart
+    action = "Bluetooth adapter reset + container restart" if bt_reset else "container restart"
+    send_notification(
+        subject=f"[Victron BM] WATCHDOG — {action}",
+        body=(
+            f"The watchdog has performed a {action}.\n\n"
+            f"Reason: BLE connection lost (container unhealthy)\n"
+            f"Container: {CONTAINER_NAME}\n"
+            f"Restart successful: {restart_success}\n"
+            f"Recent restarts (last 10 min): {recent + 1}\n"
+            f"Diagnostic file: {diag_file}\n"
+            f"Timestamp: {datetime.now().isoformat()}\n\n"
+            f"This is an automated alert from victron-bm-watchdog."
+        ),
+    )
+
     restart_history.append({
         "timestamp": datetime.now().isoformat(),
         "reason": "unhealthy",
         "status_before": status,
         "restart_success": restart_success,
-        "bt_reset": recent >= 3,
+        "bt_reset": bt_reset,
         "diagnostic_file": diag_file,
     })
 
@@ -281,6 +385,18 @@ def handle_stopped(status: dict):
     log(f"Container {CONTAINER_NAME} is stopped! Status: {status['status']}", "WARN")
 
     start_success = start_container()
+
+    send_notification(
+        subject=f"[Victron BM] WATCHDOG — container was stopped, restarting",
+        body=(
+            f"The watchdog found the container stopped and started it.\n\n"
+            f"Container: {CONTAINER_NAME}\n"
+            f"Previous status: {status['status']}\n"
+            f"Start successful: {start_success}\n"
+            f"Timestamp: {datetime.now().isoformat()}\n\n"
+            f"This is an automated alert from victron-bm-watchdog."
+        ),
+    )
 
     restart_history.append({
         "timestamp": datetime.now().isoformat(),
@@ -372,6 +488,14 @@ def main():
     log(f"  Bluetooth adapter: {BT_ADAPTER}")
     log(f"  Container: {CONTAINER_NAME}")
     log("=" * 60)
+
+    # Load SMTP config from .env for email notifications
+    global smtp_config
+    smtp_config = load_smtp_config()
+    if smtp_config.get("enabled"):
+        log(f"  SMTP: enabled ({smtp_config.get('server')})")
+    else:
+        log("  SMTP: disabled (no email notifications)")
 
     # Verify project directory exists
     if not os.path.exists(VICTRON_DIR):

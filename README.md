@@ -150,8 +150,17 @@ The watchdog service:
 - Checks container health every 30 seconds
 - Restarts the container when Docker HEALTHCHECK reports unhealthy
 - Resets the Bluetooth adapter (`hci0`) after 3 failed restarts in 10 minutes
+- Sends email notifications on restart/BT reset (reads SMTP config from `.env`)
 - Saves diagnostic logs before each restart to `/tmp/victron-bm-watchdog-*.log`
 - Exposes a status endpoint at `http://localhost:5052/status`
+
+### Email Notifications
+
+When SMTP is configured in `.env`, the system sends alerts for:
+- **DEVICE_OFFLINE** — no BLE data for 5 minutes (built-in alarm engine)
+- **DEVICE_ONLINE** — BLE data resumes after offline (built-in alarm engine)
+- **WATCHDOG restart** — container restarted due to unhealthy status (external watchdog)
+- **WATCHDOG BT reset** — Bluetooth adapter reset after repeated failures (external watchdog)
 
 Useful commands:
 ```bash
