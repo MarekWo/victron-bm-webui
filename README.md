@@ -8,7 +8,7 @@ A lightweight, containerized web application for remote monitoring of a Victron 
 - **Trend Charts** — historical data visualization with selectable metrics and time ranges
 - **Alarm Log** — searchable alarm history with time range filters, pagination, and notification status badges
 - **System Info** — device status, BLE mode, database stats, SMTP config, alarm thresholds at a glance
-- **Email Alerts** — configurable SMTP notifications for alarm conditions (low voltage, low SoC, temperature, device offline)
+- **Email & Push Alerts** — configurable SMTP and Pushover notifications for alarm conditions (low voltage, low SoC, temperature, device offline)
 - **REST API** — JSON endpoints for integration with external systems
 - **Offline-capable** — all frontend assets (Bootstrap 5, Chart.js) served locally
 - **Responsive** — optimized for desktop, tablet, and mobile devices
@@ -93,25 +93,29 @@ Configuration is split into two files by purpose:
 
 ### `.env` — Infrastructure and Secrets
 
-Contains Docker settings, device credentials, and SMTP credentials. These are values that differ between environments and/or contain secrets.
+Contains Docker settings, device credentials, and SMTP/Pushover credentials. These are values that differ between environments and/or contain secrets.
 
-| Variable           | Default              | Description                          |
-|--------------------|----------------------|--------------------------------------|
-| `TZ`               | `Europe/Warsaw`      | Container timezone                   |
-| `APP_PORT`         | `80`                 | Listening port (also used inside container) |
-| `DEVICE_MOCK`      | `true`               | Use mock data (`false` for real BLE) |
-| `BLE_MAC_ADDRESS`  |                      | Victron device MAC address           |
-| `BLE_ADV_KEY`      |                      | BLE advertisement encryption key     |
-| `COMPOSE_FILE`     |                      | Set to `docker-compose.yml:docker-compose.ble.yml` for BLE |
-| `SMTP_ENABLED`     | `false`              | Enable email notifications           |
-| `SMTP_SERVER`      |                      | SMTP server hostname                 |
-| `SMTP_PORT`        | `587`                | SMTP server port                     |
-| `SMTP_USE_TLS`     | `true`               | Use STARTTLS                         |
-| `SMTP_USERNAME`    |                      | SMTP authentication username         |
-| `SMTP_PASSWORD`    |                      | SMTP authentication password         |
-| `SMTP_SENDER_NAME` | `Victron BM Monitor` | Display name for outgoing emails     |
-| `SMTP_SENDER_EMAIL`|                      | Sender email address                 |
-| `SMTP_RECIPIENTS`  |                      | Comma-separated recipient emails     |
+| Variable                     | Default              | Description                          |
+|------------------------------|----------------------|--------------------------------------|
+| `TZ`                         | `Europe/Warsaw`      | Container timezone                   |
+| `APP_PORT`                   | `80`                 | Listening port (also used inside container) |
+| `DEVICE_MOCK`                | `true`               | Use mock data (`false` for real BLE) |
+| `BLE_MAC_ADDRESS`            |                      | Victron device MAC address           |
+| `BLE_ADV_KEY`                |                      | BLE advertisement encryption key     |
+| `COMPOSE_FILE`               |                      | Set to `docker-compose.yml:docker-compose.ble.yml` for BLE |
+| `SMTP_ENABLED`               | `false`              | Enable email notifications           |
+| `SMTP_SERVER`                |                      | SMTP server hostname                 |
+| `SMTP_PORT`                  | `587`                | SMTP server port                     |
+| `SMTP_USE_TLS`               | `true`               | Use STARTTLS                         |
+| `SMTP_USERNAME`              |                      | SMTP authentication username         |
+| `SMTP_PASSWORD`              |                      | SMTP authentication password         |
+| `SMTP_SENDER_NAME`           | `Victron BM Monitor` | Display name for outgoing emails     |
+| `SMTP_SENDER_EMAIL`          |                      | Sender email address                 |
+| `SMTP_RECIPIENTS`            |                      | Comma-separated recipient emails     |
+| `PUSHOVER_ENABLED`           | `false`              | Enable Pushover push notifications   |
+| `PUSHOVER_TOKEN`             |                      | Pushover application token           |
+| `PUSHOVER_USER`              |                      | Pushover user/group key              |
+| `PRIORITY_...`               |                      | Priorities for events (-2 to 2)      |
 
 ### `config/config.yaml` — Application Behavior
 
@@ -154,13 +158,16 @@ The watchdog service:
 - Saves diagnostic logs before each restart to `/tmp/victron-bm-watchdog-*.log`
 - Exposes a status endpoint at `http://localhost:5052/status`
 
-### Email Notifications
+### Email & Push Notifications
 
-When SMTP is configured in `.env`, the system sends alerts for:
+When SMTP and/or Pushover are configured in `.env`, the system sends alerts for:
 - **DEVICE_OFFLINE** — no BLE data for 5 minutes (built-in alarm engine)
 - **DEVICE_ONLINE** — BLE data resumes after offline (built-in alarm engine)
 - **WATCHDOG restart** — container restarted due to unhealthy status (external watchdog)
 - **WATCHDOG BT reset** — Bluetooth adapter reset after repeated failures (external watchdog)
+- **Threshold alarms** — low voltage, low SoC, high temperature, AC power loss/restore, etc.
+
+Pushover notifications can be fine-tuned using priority levels (-2 to 2) configured in `.env` (e.g., `PRIORITY_AC_POWER_LOST=1`, `PRIORITY_WATCHDOG_RESTART=2`).
 
 Useful commands:
 ```bash
