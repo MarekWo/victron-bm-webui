@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 from app.mail import send_email
+from app.pushover import send_pushover
 from app.models import Database
 
 log = logging.getLogger(__name__)
@@ -32,6 +33,8 @@ class AlarmEngine:
         self.db = db
         self._alarm_config = config.get("alarms", {})
         self._smtp_config = config.get("smtp", {})
+        self._pushover_config = config.get("pushover", {})
+        self._priorities = config.get("priorities", {})
         self._notif_config = config.get("notifications", {})
         self._cooldowns: dict[str, float] = {}
         self._previous_device_alarm: str | None = None
@@ -183,7 +186,7 @@ class AlarmEngine:
                 )
 
     def _fire_alarm(self, alarm_type: str, message: str) -> None:
-        """Log an alarm and optionally send email notification.
+        """Log an alarm and optionally send notifications (Email/Pushover).
 
         Respects cooldown period per alarm type.
         """
@@ -195,12 +198,29 @@ class AlarmEngine:
 
         self._cooldowns[alarm_type] = now
 
+        # Map alarm_type to priority key
+        # THRESHOLD_LOW_VOLTAGE -> low_voltage
+        # DEVICE_OFFLINE -> device_offline
+        # AC_POWER_LOST -> ac_power_lost
+        priority_key = alarm_type.lower().replace("threshold_", "")
+        priority = self._priorities.get(priority_key, 0)
+
         # Send email
-        notified = send_email(
+        email_success = send_email(
             self._smtp_config,
             subject=f"[Victron BM] {alarm_type}",
             body=f"{message}\n\nThis is an automated alert from victron-bm-webui.",
         )
+
+        # Send Pushover
+        pushover_success = send_pushover(
+            self._pushover_config,
+            message=message,
+            title=f"[Victron BM] {alarm_type}",
+            priority=priority,
+        )
+
+        notified = email_success or pushover_success
 
         # Log to database
         try:

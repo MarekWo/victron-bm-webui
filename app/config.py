@@ -43,6 +43,23 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "sender_email": "",
         "recipients": [],
     },
+    "pushover": {
+        "enabled": False,
+        "token": "",
+        "user": "",
+    },
+    "priorities": {
+        "ac_power_lost": 1,
+        "ac_power_restored": 0,
+        "low_voltage": 1,
+        "high_voltage": 1,
+        "low_soc": 1,
+        "high_temperature": 1,
+        "low_temperature": 1,
+        "device_offline": 1,
+        "device_online": 0,
+        "watchdog_restart": 1,
+    },
     "notifications": {
         "alarm_triggered": True,
         "alarm_cleared": True,
@@ -78,6 +95,8 @@ def load_config(path: str | None = None) -> dict[str, Any]:
     # Apply environment variable overrides
     _apply_device_env_overrides(config)
     _apply_smtp_env_overrides(config)
+    _apply_pushover_env_overrides(config)
+    _apply_priority_env_overrides(config)
 
     return config
 
@@ -135,6 +154,39 @@ def _apply_smtp_env_overrides(config: dict[str, Any]) -> None:
     recipients_env = os.environ.get("SMTP_RECIPIENTS", "").strip()
     if recipients_env:
         smtp["recipients"] = [r.strip() for r in recipients_env.split(",") if r.strip()]
+
+
+def _apply_pushover_env_overrides(config: dict[str, Any]) -> None:
+    """Override Pushover config values from environment variables."""
+    pushover = config.setdefault("pushover", {})
+
+    env_map = {
+        "PUSHOVER_ENABLED": ("enabled", lambda v: v.lower() in ("true", "1", "yes")),
+        "PUSHOVER_TOKEN": ("token", str),
+        "PUSHOVER_USER": ("user", str),
+    }
+
+    for env_var, (key, converter) in env_map.items():
+        val = os.environ.get(env_var, "").strip()
+        if val:
+            try:
+                pushover[key] = converter(val)
+            except (ValueError, TypeError):
+                pass
+
+
+def _apply_priority_env_overrides(config: dict[str, Any]) -> None:
+    """Override notification priorities from environment variables."""
+    priorities = config.setdefault("priorities", {})
+
+    for key in priorities.keys():
+        env_var = f"PRIORITY_{key.upper()}"
+        val = os.environ.get(env_var, "").strip()
+        if val:
+            try:
+                priorities[key] = int(val)
+            except (ValueError, TypeError):
+                pass
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

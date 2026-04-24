@@ -28,6 +28,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -42,8 +44,14 @@ BT_ADAPTER = os.environ.get("BT_ADAPTER", "hci0")
 
 CONTAINER_NAME = "victron-bm-webui"
 
-# SMTP configuration (loaded from .env at startup)
-smtp_config = {}
+# Notification configuration (loaded from .env at startup)
+notif_config = {
+    "smtp": {},
+    "pushover": {},
+    "priorities": {
+        "watchdog_restart": 1
+    }
+}
 
 # Global state
 last_check_time = None
@@ -51,10 +59,14 @@ last_check_result = {}
 restart_history = []
 
 
-def load_smtp_config() -> dict:
-    """Load SMTP configuration from the project's .env file."""
+def load_notif_config() -> dict:
+    """Load notification configuration from the project's .env file."""
     env_file = os.path.join(VICTRON_DIR, ".env")
-    config = {}
+    config = {
+        "smtp": {"enabled": False},
+        "pushover": {"enabled": False},
+        "priorities": {"watchdog_restart": 1}
+    }
 
     if not os.path.exists(env_file):
         return config
@@ -73,62 +85,123 @@ def load_smtp_config() -> dict:
         log(f"Failed to read .env file: {e}", "WARN")
         return config
 
-    config["enabled"] = env_vars.get("SMTP_ENABLED", "").lower() in ("true", "1", "yes")
-    config["server"] = env_vars.get("SMTP_SERVER", "")
-    config["port"] = int(env_vars.get("SMTP_PORT", "587") or "587")
-    config["use_tls"] = env_vars.get("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes")
-    config["username"] = env_vars.get("SMTP_USERNAME", "")
-    config["password"] = env_vars.get("SMTP_PASSWORD", "")
-    config["sender_name"] = env_vars.get("SMTP_SENDER_NAME", "Victron BM Watchdog")
-    config["sender_email"] = env_vars.get("SMTP_SENDER_EMAIL", "")
+    # SMTP
+    smtp = config["smtp"]
+    smtp["enabled"] = env_vars.get("SMTP_ENABLED", "").lower() in ("true", "1", "yes")
+    smtp["server"] = env_vars.get("SMTP_SERVER", "")
+    smtp["port"] = int(env_vars.get("SMTP_PORT", "587") or "587")
+    smtp["use_tls"] = env_vars.get("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes")
+    smtp["username"] = env_vars.get("SMTP_USERNAME", "")
+    smtp["password"] = env_vars.get("SMTP_PASSWORD", "")
+    smtp["sender_name"] = env_vars.get("SMTP_SENDER_NAME", "Victron BM Watchdog")
+    smtp["sender_email"] = env_vars.get("SMTP_SENDER_EMAIL", "")
     recipients_str = env_vars.get("SMTP_RECIPIENTS", "")
-    config["recipients"] = [r.strip() for r in recipients_str.split(",") if r.strip()]
+    smtp["recipients"] = [r.strip() for r in recipients_str.split(",") if r.strip()]
+
+    # Pushover
+    pushover = config["pushover"]
+    pushover["enabled"] = env_vars.get("PUSHOVER_ENABLED", "").lower() in ("true", "1", "yes")
+    pushover["token"] = env_vars.get("PUSHOVER_TOKEN", "")
+    pushover["user"] = env_vars.get("PUSHOVER_USER", "")
+
+    # Priorities
+    if "PRIORITY_WATCHDOG_RESTART" in env_vars:
+        try:
+            config["priorities"]["watchdog_restart"] = int(env_vars["PRIORITY_WATCHDOG_RESTART"])
+        except ValueError:
+            pass
 
     return config
 
 
-def send_notification(subject: str, body: str) -> bool:
-    """Send an email notification using SMTP config from .env."""
-    if not smtp_config.get("enabled"):
+def send_pushover(subject: str, message: str) -> bool:
+    """Send a push notification using Pushover."""
+    config = notif_config.get("pushover", {})
+    if not config.get("enabled"):
         return False
 
-    recipients = smtp_config.get("recipients", [])
-    server_host = smtp_config.get("server", "")
-    if not recipients or not server_host:
+    token = config.get("token")
+    user = config.get("user")
+    if not token or not user:
         return False
 
-    sender_name = smtp_config.get("sender_name", "Victron BM Watchdog")
-    sender_email = smtp_config.get("sender_email", "")
+    priority = notif_config.get("priorities", {}).get("watchdog_restart", 0)
 
-    msg = MIMEMultipart()
-    msg["From"] = f"{sender_name} <{sender_email}>"
-    msg["To"] = ", ".join(recipients)
-    msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
+    url = "https://api.pushover.net/1/messages.json"
+    data = {
+        "token": token,
+        "user": user,
+        "message": message,
+        "title": subject,
+        "priority": priority,
+    }
+
+    if priority == 2:
+        data["retry"] = 60
+        data["expire"] = 3600
 
     try:
-        port = smtp_config.get("port", 587)
-        if smtp_config.get("use_tls", True):
-            server = smtplib.SMTP(server_host, port, timeout=30)
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-        else:
-            server = smtplib.SMTP(server_host, port, timeout=30)
-            server.ehlo()
-
-        username = smtp_config.get("username", "")
-        password = smtp_config.get("password", "")
-        if username and password:
-            server.login(username, password)
-
-        server.sendmail(sender_email, recipients, msg.as_string())
-        server.quit()
-        log(f"Email sent: {subject}")
-        return True
+        encoded_data = urllib.parse.urlencode(data).encode("utf-8")
+        req = urllib.request.Request(url, data=encoded_data, method="POST")
+        with urllib.request.urlopen(req, timeout=30) as response:
+            if response.status == 200:
+                log(f"Pushover notification sent: {subject}")
+                return True
+            else:
+                log(f"Pushover API returned status {response.status}", "ERROR")
+                return False
     except Exception as e:
-        log(f"Failed to send email: {e}", "ERROR")
+        log(f"Failed to send Pushover notification: {e}", "ERROR")
         return False
+
+
+def send_notification(subject: str, body: str) -> bool:
+    """Send notifications via enabled channels (Email, Pushover)."""
+    email_success = False
+    pushover_success = False
+
+    # Email
+    smtp = notif_config.get("smtp", {})
+    if smtp.get("enabled"):
+        recipients = smtp.get("recipients", [])
+        server_host = smtp.get("server", "")
+        if recipients and server_host:
+            sender_name = smtp.get("sender_name", "Victron BM Watchdog")
+            sender_email = smtp.get("sender_email", "")
+
+            msg = MIMEMultipart()
+            msg["From"] = f"{sender_name} <{sender_email}>"
+            msg["To"] = ", ".join(recipients)
+            msg["Subject"] = subject
+            msg.attach(MIMEText(body, "plain"))
+
+            try:
+                port = smtp.get("port", 587)
+                if smtp.get("use_tls", True):
+                    server = smtplib.SMTP(server_host, port, timeout=30)
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                else:
+                    server = smtplib.SMTP(server_host, port, timeout=30)
+                    server.ehlo()
+
+                username = smtp.get("username", "")
+                password = smtp.get("password", "")
+                if username and password:
+                    server.login(username, password)
+
+                server.sendmail(sender_email, recipients, msg.as_string())
+                server.quit()
+                log(f"Email sent: {subject}")
+                email_success = True
+            except Exception as e:
+                log(f"Failed to send email: {e}", "ERROR")
+
+    # Pushover
+    pushover_success = send_pushover(subject, body)
+
+    return email_success or pushover_success
 
 
 def log(message: str, level: str = "INFO"):
@@ -489,13 +562,19 @@ def main():
     log(f"  Container: {CONTAINER_NAME}")
     log("=" * 60)
 
-    # Load SMTP config from .env for email notifications
-    global smtp_config
-    smtp_config = load_smtp_config()
-    if smtp_config.get("enabled"):
-        log(f"  SMTP: enabled ({smtp_config.get('server')})")
+    # Load notification config from .env
+    global notif_config
+    notif_config = load_notif_config()
+
+    if notif_config["smtp"].get("enabled"):
+        log(f"  SMTP: enabled ({notif_config['smtp'].get('server')})")
     else:
-        log("  SMTP: disabled (no email notifications)")
+        log("  SMTP: disabled")
+
+    if notif_config["pushover"].get("enabled"):
+        log(f"  Pushover: enabled (priority: {notif_config['priorities'].get('watchdog_restart', 0)})")
+    else:
+        log("  Pushover: disabled")
 
     # Verify project directory exists
     if not os.path.exists(VICTRON_DIR):
