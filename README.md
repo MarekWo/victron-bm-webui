@@ -153,18 +153,23 @@ sudo ./install.sh
 The watchdog service:
 - Checks container health every 30 seconds
 - Restarts the container when Docker HEALTHCHECK reports unhealthy
-- Resets the Bluetooth adapter (`hci0`) after 3 failed restarts in 10 minutes
-- Sends email notifications on restart/BT reset (reads SMTP config from `.env`)
+- Inspects container logs for the `org.bluez.Error.InProgress` signature — when present, a plain container restart cannot recover and BT recovery is applied immediately
+- Applies a progressive BT recovery escalation when a plain restart isn't enough:
+  - **L1** — `hciconfig hci0 reset` (transient adapter glitches)
+  - **L2** — `systemctl restart bluetooth.service` (stale BlueZ/D-Bus state)
+  - **L3** — `modprobe -r btusb && modprobe btusb` (USB Bluetooth firmware lockup — e.g., BCM43142 returning `Connection timed out`; previously required a host reboot)
+- Sends email/Pushover notifications on restart/BT recovery (reads config from `.env`)
 - Saves diagnostic logs before each restart to `/tmp/victron-bm-watchdog-*.log`
 - Exposes a status endpoint at `http://localhost:5052/status`
+
+The watchdog runs as `root` (systemd `User=root`) so it can issue `modprobe` directly — no sudo configuration required.
 
 ### Email & Push Notifications
 
 When SMTP and/or Pushover are configured in `.env`, the system sends alerts for:
 - **DEVICE_OFFLINE** — no BLE data for 5 minutes (built-in alarm engine)
 - **DEVICE_ONLINE** — BLE data resumes after offline (built-in alarm engine)
-- **WATCHDOG restart** — container restarted due to unhealthy status (external watchdog)
-- **WATCHDOG BT reset** — Bluetooth adapter reset after repeated failures (external watchdog)
+- **WATCHDOG restart** — container restart (L0), or one of the escalation levels: hciconfig reset (L1), bluetoothd restart (L2), btusb driver reload (L3)
 - **Threshold alarms** — low voltage, low SoC, high temperature, AC power loss/restore, etc.
 
 Pushover notifications can be fine-tuned using priority levels (-2 to 2) configured in `.env` (e.g., `PRIORITY_AC_POWER_LOST=1`, `PRIORITY_WATCHDOG_RESTART=2`).

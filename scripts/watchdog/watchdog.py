@@ -324,37 +324,83 @@ def start_container() -> bool:
         return False
 
 
-def reset_bluetooth_adapter() -> bool:
-    """Reset the Bluetooth adapter to recover from BlueZ/D-Bus stale state.
-
-    Tries hciconfig reset first, then falls back to bluetoothctl power cycle.
-    """
-    log(f"Resetting Bluetooth adapter {BT_ADAPTER}", "WARN")
-
-    # Method 1: hciconfig reset
-    success, stdout, stderr = run_command(
-        ["hciconfig", BT_ADAPTER, "reset"], timeout=10
-    )
+def _bt_recover_l1() -> bool:
+    """L1 recovery: hciconfig adapter reset (mildest, often enough for transient glitches)."""
+    log(f"BT recovery L1: hciconfig {BT_ADAPTER} reset", "WARN")
+    success, _, stderr = run_command(["hciconfig", BT_ADAPTER, "reset"], timeout=10)
     if success:
-        log(f"Bluetooth adapter {BT_ADAPTER} reset via hciconfig")
         time.sleep(3)
         return True
-
-    log(f"hciconfig reset failed: {stderr}, trying bluetoothctl", "WARN")
-
-    # Method 2: bluetoothctl power cycle
-    run_command(["bluetoothctl", "power", "off"], timeout=10)
-    time.sleep(2)
-    success, stdout, stderr = run_command(
-        ["bluetoothctl", "power", "on"], timeout=10
-    )
-    if success:
-        log(f"Bluetooth adapter reset via bluetoothctl power cycle")
-        time.sleep(3)
-        return True
-
-    log(f"Bluetooth adapter reset failed: {stderr}", "ERROR")
+    log(f"L1 (hciconfig reset) failed: {stderr}", "WARN")
     return False
+
+
+def _bt_recover_l2() -> bool:
+    """L2 recovery: restart bluetoothd to clear stale BlueZ/D-Bus client state."""
+    log("BT recovery L2: restart bluetooth.service", "WARN")
+    success, _, stderr = run_command(
+        ["systemctl", "restart", "bluetooth.service"], timeout=30
+    )
+    if success:
+        time.sleep(5)
+        return True
+    log(f"L2 (bluetoothd restart) failed: {stderr}", "ERROR")
+    return False
+
+
+def _bt_recover_l3() -> bool:
+    """L3 recovery: reload btusb kernel module to recover the USB Bluetooth adapter
+    from a firmware lockup (HCI returns 'Connection timed out'). This forces a fresh
+    firmware load and re-enumerates the adapter."""
+    log("BT recovery L3: reload btusb kernel module", "WARN")
+    success, _, stderr = run_command(["/usr/sbin/modprobe", "-r", "btusb"], timeout=30)
+    if not success:
+        log(f"L3 modprobe -r btusb failed: {stderr}", "ERROR")
+        return False
+    time.sleep(2)
+    success, _, stderr = run_command(["/usr/sbin/modprobe", "btusb"], timeout=30)
+    if not success:
+        log(f"L3 modprobe btusb failed: {stderr}", "ERROR")
+        return False
+    time.sleep(3)
+    # bluetoothd needs to re-register the freshly-enumerated adapter
+    run_command(["systemctl", "restart", "bluetooth.service"], timeout=30)
+    time.sleep(5)
+    return True
+
+
+def perform_bt_recovery(level: int) -> bool:
+    """Dispatch to the BT recovery action for the given escalation level (1-3)."""
+    if level >= 3:
+        return _bt_recover_l3()
+    if level == 2:
+        return _bt_recover_l2()
+    return _bt_recover_l1()
+
+
+def detect_ble_lockup(logs: str) -> bool:
+    """Detect the BlueZ 'Operation already in progress' error signature.
+
+    When this appears the container's BLE scan loop cannot recover by restarting
+    the process — the bad state lives in BlueZ or the USB adapter on the host.
+    """
+    return "org.bluez.Error.InProgress" in logs
+
+
+def get_highest_recent_recovery_level(minutes: int = 15) -> int:
+    """Return the highest BT recovery level applied in the last N minutes (0 if none)."""
+    cutoff = time.time() - (minutes * 60)
+    max_level = 0
+    for entry in restart_history:
+        try:
+            ts = datetime.fromisoformat(entry["timestamp"]).timestamp()
+        except (ValueError, KeyError):
+            continue
+        if ts >= cutoff:
+            level = entry.get("recovery_level", 0)
+            if level > max_level:
+                max_level = level
+    return max_level
 
 
 def count_recent_restarts(minutes: int = 10) -> int:
@@ -372,9 +418,10 @@ def count_recent_restarts(minutes: int = 10) -> int:
     return count
 
 
-def save_diagnostic(status: dict, reason: str) -> str:
-    """Save diagnostic info before restart."""
-    logs = get_container_logs(lines=200)
+def save_diagnostic(status: dict, reason: str, logs: str = None) -> str:
+    """Save diagnostic info before restart. Caller may pass pre-fetched logs."""
+    if logs is None:
+        logs = get_container_logs(lines=200)
     diag_file = (
         f"/tmp/victron-bm-watchdog-{reason}-"
         f"{datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
@@ -395,40 +442,71 @@ def save_diagnostic(status: dict, reason: str) -> str:
         return ""
 
 
+RECOVERY_ACTION_LABELS = {
+    0: "container restart",
+    1: "hciconfig reset + container restart",
+    2: "bluetoothd restart + container restart",
+    3: "btusb driver reload + container restart",
+}
+
+
 def handle_unhealthy(status: dict):
-    """Handle an unhealthy container — restart, escalate to BT reset if needed."""
+    """Handle an unhealthy container with progressive BT recovery escalation.
+
+    Escalation logic:
+    - If logs show 'org.bluez.Error.InProgress' (BlueZ stale/locked state), a plain
+      container restart cannot recover — go straight to BT recovery. Start at L2
+      (bluetoothd restart) and escalate to L3 (btusb reload) if L2 was already
+      tried recently. L3 fixes the BCM43142 firmware lockup that otherwise
+      requires a host reboot.
+    - If no specific pattern but >=3 restarts in 10 min, use L1 (hciconfig reset).
+    - Otherwise, plain container restart.
+    """
     global restart_history
 
     log(f"Container {CONTAINER_NAME} is unhealthy! Health: {status['health']}", "WARN")
 
-    diag_file = save_diagnostic(status, "unhealthy")
-
+    logs = get_container_logs(lines=200)
+    diag_file = save_diagnostic(status, "unhealthy", logs=logs)
+    inprogress = detect_ble_lockup(logs)
     recent = count_recent_restarts(minutes=10)
-    restart_success = False
+    highest_recent_level = get_highest_recent_recovery_level(minutes=15)
 
-    bt_reset = False
-    if recent >= 3:
-        bt_reset = True
+    if inprogress:
+        target_level = min(max(highest_recent_level + 1, 2), 3)
         log(
-            f"{CONTAINER_NAME} restarted {recent} times in last 10 min — "
-            f"resetting Bluetooth adapter before restart",
+            f"BLE 'InProgress' detected — escalating to L{target_level} "
+            f"(highest recent: L{highest_recent_level})",
             "WARN",
         )
-        # Stop container, reset BT, then start
+    elif recent >= 3:
+        target_level = 1
+        log(
+            f"{CONTAINER_NAME} restarted {recent} times in last 10 min — "
+            f"applying L1 BT recovery before restart",
+            "WARN",
+        )
+    else:
+        target_level = 0
+
+    bt_reset_success = None
+    if target_level >= 1:
         run_compose_command(["stop", CONTAINER_NAME], timeout=60)
-        reset_bluetooth_adapter()
+        bt_reset_success = perform_bt_recovery(target_level)
         restart_success = start_container()
     else:
         restart_success = restart_container()
 
-    # Send email notification about the restart
-    action = "Bluetooth adapter reset + container restart" if bt_reset else "container restart"
+    action = RECOVERY_ACTION_LABELS.get(target_level, "container restart")
+    reason = "BLE InProgress (BlueZ/adapter stale)" if inprogress else "container unhealthy"
     send_notification(
         subject=f"[Victron BM] WATCHDOG — {action}",
         body=(
             f"The watchdog has performed a {action}.\n\n"
-            f"Reason: BLE connection lost (container unhealthy)\n"
+            f"Reason: {reason}\n"
             f"Container: {CONTAINER_NAME}\n"
+            f"Recovery level: L{target_level}\n"
+            f"BT recovery successful: {bt_reset_success}\n"
             f"Restart successful: {restart_success}\n"
             f"Recent restarts (last 10 min): {recent + 1}\n"
             f"Diagnostic file: {diag_file}\n"
@@ -442,11 +520,13 @@ def handle_unhealthy(status: dict):
         "reason": "unhealthy",
         "status_before": status,
         "restart_success": restart_success,
-        "bt_reset": bt_reset,
+        "bt_reset": target_level >= 1,
+        "recovery_level": target_level,
+        "inprogress_detected": inprogress,
+        "bt_reset_success": bt_reset_success,
         "diagnostic_file": diag_file,
     })
 
-    # Keep only last 50 entries
     if len(restart_history) > 50:
         restart_history[:] = restart_history[-50:]
 
