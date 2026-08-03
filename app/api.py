@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
+from app.ac_state import resolve_ac_detection
+
 api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
 # App start time for uptime calculation
@@ -27,8 +29,14 @@ def status():
             "consumed_ah": -15.2,
             "remaining_mins": 388,
             "temperature": 18.0,
-            "alarm": null
+            "alarm": null,
+            "ac_power": true,
+            "ac_power_since": "2026-03-14T09:02:11+00:00"
         }
+
+    `ac_power` is the inferred mains presence: true on mains, false on
+    battery, null while still unknown (no usable reading yet). See
+    app/ac_state.py for how it is derived.
     """
     shared_state = current_app.config.get("SHARED_STATE")
     if shared_state is None:
@@ -37,6 +45,10 @@ def status():
     config = current_app.config["VICTRON"]
     data = shared_state.get()
     data["device_name"] = config["device"].get("name", "BMV-712 Smart")
+    # Always present, even before the first reading, so consumers can rely
+    # on the key existing rather than having to probe for it.
+    data.setdefault("ac_power", None)
+    data.setdefault("ac_power_since", None)
 
     return jsonify(data)
 
@@ -156,8 +168,12 @@ def config_info():
         {
             "smtp_enabled": true,
             "smtp_recipients": ["user@example.com"],
-            "alarms": {"low_voltage": 11.5, ...}
+            "alarms": {"low_voltage": 11.5, ...},
+            "ac_detection": {"voltage_on": 13.6, "voltage_off": 13.4, ...}
         }
+
+    `ac_detection` reports the *resolved* thresholds actually in use, with
+    any values derived from alarms.ac_power_voltage already applied.
     """
     config = current_app.config["VICTRON"]
     smtp = config.get("smtp", {})
@@ -167,6 +183,7 @@ def config_info():
         "smtp_enabled": smtp.get("enabled", False),
         "smtp_recipients": smtp.get("recipients", []),
         "alarms": alarms,
+        "ac_detection": resolve_ac_detection(config),
     })
 
 
@@ -239,5 +256,12 @@ def _average_bucket(bucket: list[dict], fields: list[str]) -> dict:
     # Keep last alarm value from the bucket
     if "alarm" in bucket[-1]:
         averaged["alarm"] = bucket[-1]["alarm"]
+
+    # Mains presence is not meaningfully averaged — a bucket counts as an
+    # outage if mains was down at any point inside it.
+    if any("ac_power" in r for r in bucket):
+        values = [r["ac_power"] for r in bucket
+                  if r.get("ac_power") is not None]
+        averaged["ac_power"] = min(values) if values else None
 
     return averaged

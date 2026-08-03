@@ -25,7 +25,26 @@ alarms:
   low_soc: 20.0               # Percent
   high_temperature: 45.0      # Celsius
   low_temperature: 0.0        # Celsius
-  ac_power_voltage: null      # Volts - AC power lost if voltage drops below (e.g., 13.60)
+  ac_power_voltage: null      # Volts - legacy AC threshold; see ac_detection below
+
+# Mains (AC) presence detection.
+#
+# A BMV-712 is a shunt and has no AC input, so mains presence is inferred
+# from battery current and voltage. Current is the primary signal: once the
+# inverter starts drawing from the battery, current goes firmly negative
+# well before voltage sags. Voltage acts as a secondary check, with a
+# hysteresis band so a brief dip cannot flip the state on its own.
+#
+# The resulting state is published as `ac_power` on GET /api/v1/status.
+ac_detection:
+  voltage_on: null            # Volts - mains considered back at/above this.
+                              # null = use alarms.ac_power_voltage, else 13.55
+  voltage_off: null           # Volts - mains considered lost below this.
+                              # null = alarms.ac_power_voltage - 0.2, else 13.40
+  discharge_current: -1.0     # Amps - at/below this the battery is definitely
+                              # carrying the load, regardless of voltage
+  debounce_samples: 2         # Consecutive agreeing readings before the state
+                              # flips (2 x poll_interval_seconds = 20s default)
 
 # Notification settings (which events trigger emails)
 notifications:
@@ -34,5 +53,5 @@ notifications:
   threshold_exceeded: true    # App-defined threshold exceeded
   device_offline: true        # No BLE data for >5 minutes
   device_online: true         # BLE data resumes after offline
-  ac_power_lost: true         # Voltage drops below ac_power_voltage threshold
-  ac_power_restored: true     # Voltage returns above ac_power_voltage threshold
+  ac_power_lost: true         # Mains presence lost (see ac_detection)
+  ac_power_restored: true     # Mains presence restored (see ac_detection)

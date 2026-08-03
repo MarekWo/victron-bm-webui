@@ -32,6 +32,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "low_temperature": 0.0,
         "ac_power_voltage": None,
     },
+    "ac_detection": {
+        # None = derive from alarms.ac_power_voltage (see app/ac_state.py)
+        "voltage_on": None,
+        "voltage_off": None,
+        "discharge_current": -1.0,
+        "debounce_samples": 2,
+    },
     "smtp": {
         "enabled": False,
         "server": "",

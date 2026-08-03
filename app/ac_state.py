@@ -1,0 +1,169 @@
+"""AC mains presence detection for victron-bm-webui.
+
+A BMV-712 is a shunt — it has no AC input and therefore no direct way of
+telling whether mains power is present. The state has to be inferred from
+what the shunt does measure: battery voltage and battery current.
+
+Current is the stronger of the two signals. Whenever mains is present the
+charger carries the load, so battery current sits at or slightly above zero
+(float). The moment mains disappears the inverter starts drawing from the
+battery and current goes firmly negative — long before voltage has had time
+to sag. Voltage is used as a secondary confirmation, with a hysteresis band
+so that a brief sag cannot flip the state on its own.
+"""
+
+from datetime import datetime, timezone
+from typing import Any
+
+# Used when neither `ac_detection` nor `alarms.ac_power_voltage` is configured.
+DEFAULT_VOLTAGE_ON = 13.55
+DEFAULT_VOLTAGE_OFF = 13.40
+DEFAULT_DISCHARGE_CURRENT = -1.0
+DEFAULT_DEBOUNCE_SAMPLES = 2
+
+# Width of the hysteresis band derived from a legacy `alarms.ac_power_voltage`.
+LEGACY_HYSTERESIS_VOLTS = 0.2
+
+
+def resolve_ac_detection(config: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the effective ac_detection settings from a loaded config.
+
+    `voltage_on` / `voltage_off` may be left unset, in which case they are
+    derived from the legacy `alarms.ac_power_voltage` threshold: that value
+    becomes the restore threshold and the loss threshold sits
+    LEGACY_HYSTERESIS_VOLTS below it. Without either, hard defaults apply.
+
+    Returns:
+        Dict with voltage_on, voltage_off, discharge_current, debounce_samples.
+    """
+    detection = dict(config.get("ac_detection") or {})
+    legacy = (config.get("alarms") or {}).get("ac_power_voltage")
+
+    voltage_on = detection.get("voltage_on")
+    voltage_off = detection.get("voltage_off")
+
+    if voltage_on is None:
+        voltage_on = float(legacy) if legacy is not None else DEFAULT_VOLTAGE_ON
+    if voltage_off is None:
+        voltage_off = (
+            float(legacy) - LEGACY_HYSTERESIS_VOLTS
+            if legacy is not None
+            else DEFAULT_VOLTAGE_OFF
+        )
+
+    voltage_on = float(voltage_on)
+    voltage_off = float(voltage_off)
+
+    # A non-existent or inverted band would make the state flap on every
+    # reading; collapse it back into a sane hysteresis window.
+    if voltage_off >= voltage_on:
+        voltage_off = voltage_on - LEGACY_HYSTERESIS_VOLTS
+
+    discharge_current = detection.get("discharge_current")
+    discharge_current = (
+        float(discharge_current)
+        if discharge_current is not None
+        else DEFAULT_DISCHARGE_CURRENT
+    )
+
+    debounce = detection.get("debounce_samples")
+    debounce = int(debounce) if debounce is not None else DEFAULT_DEBOUNCE_SAMPLES
+    debounce = max(1, debounce)
+
+    return {
+        "voltage_on": voltage_on,
+        "voltage_off": voltage_off,
+        "discharge_current": discharge_current,
+        "debounce_samples": debounce,
+    }
+
+
+class ACStateTracker:
+    """Tracks mains presence across readings, with hysteresis and debounce."""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        settings = resolve_ac_detection(config)
+        self.voltage_on: float = settings["voltage_on"]
+        self.voltage_off: float = settings["voltage_off"]
+        self.discharge_current: float = settings["discharge_current"]
+        self.debounce_samples: int = settings["debounce_samples"]
+
+        self._state: bool | None = None  # None = unknown (no usable reading yet)
+        self._since: str | None = None
+        self._pending: bool | None = None
+        self._pending_count: int = 0
+
+    @property
+    def state(self) -> bool | None:
+        """Current mains presence: True = on mains, False = on battery."""
+        return self._state
+
+    @property
+    def since(self) -> str | None:
+        """ISO 8601 timestamp of the last confirmed state change."""
+        return self._since
+
+    def update(self, voltage: float | None, current: float | None) -> bool | None:
+        """Feed a new reading and return the (possibly updated) mains state.
+
+        Args:
+            voltage: Battery voltage in volts, or None if unavailable.
+            current: Battery current in amps (negative = discharging),
+                     or None if unavailable.
+
+        Returns:
+            True on mains, False on battery, None while still unknown.
+        """
+        raw = self._classify(voltage, current)
+
+        if raw is None:
+            # Unusable reading or inside the hysteresis band — hold the state
+            # and drop any half-finished transition.
+            self._pending = None
+            self._pending_count = 0
+            return self._state
+
+        if self._state is None:
+            # First usable reading: adopt it silently, no transition fired.
+            self._set_state(raw)
+            return self._state
+
+        if raw == self._state:
+            self._pending = None
+            self._pending_count = 0
+            return self._state
+
+        if self._pending is raw:
+            self._pending_count += 1
+        else:
+            self._pending = raw
+            self._pending_count = 1
+
+        if self._pending_count >= self.debounce_samples:
+            self._set_state(raw)
+
+        return self._state
+
+    def _classify(self, voltage: float | None, current: float | None) -> bool | None:
+        """Classify a single reading without any state or debounce logic."""
+        if current is not None and current <= self.discharge_current:
+            # Drawing meaningful current out of the battery — mains is gone,
+            # regardless of what voltage still reads.
+            return False
+
+        if voltage is None:
+            return None
+
+        if voltage < self.voltage_off:
+            return False
+        if voltage >= self.voltage_on:
+            return True
+
+        # Between the two thresholds: ambiguous, hold whatever we had.
+        return None
+
+    def _set_state(self, state: bool) -> None:
+        self._state = state
+        self._since = datetime.now(timezone.utc).isoformat()
+        self._pending = None
+        self._pending_count = 0

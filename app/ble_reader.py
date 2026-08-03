@@ -15,6 +15,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from app.ac_state import ACStateTracker
+
 log = logging.getLogger(__name__)
 
 # How long without a BLE reading before restarting the scanner
@@ -141,6 +143,14 @@ class BLEReaderThread(threading.Thread):
         self._purge_counter = 0
         self._max_restarts = config["ble"].get("max_scanner_restarts", 3)
         self._consecutive_failures = 0
+        self.ac_tracker = ACStateTracker(config)
+        log.info(
+            "AC detection: on >= %.2fV, off < %.2fV, discharge <= %.2fA, debounce %d samples",
+            self.ac_tracker.voltage_on,
+            self.ac_tracker.voltage_off,
+            self.ac_tracker.discharge_current,
+            self.ac_tracker.debounce_samples,
+        )
 
     def run(self) -> None:
         """Main loop: read BLE data or generate mock data."""
@@ -162,6 +172,7 @@ class BLEReaderThread(threading.Thread):
         while not self._stop_event.is_set():
             try:
                 data = generator.generate()
+                self._annotate_ac_power(data)
                 self.shared_state.update(data)
                 self.db.insert_reading(data)
                 self._evaluate_alarms(data)
@@ -295,6 +306,7 @@ class BLEReaderThread(threading.Thread):
                     "alarm": alarm_str,
                 }
 
+                self._annotate_ac_power(data)
                 self.shared_state.update(data)
                 self.db.insert_reading(data)
                 self._evaluate_alarms_async(data)
@@ -339,6 +351,22 @@ class BLEReaderThread(threading.Thread):
                             SCANNER_STOP_TIMEOUT_SECONDS)
             except Exception:
                 log.warning("BLE scanner.stop() failed (ignored)", exc_info=True)
+
+    def _annotate_ac_power(self, data: dict[str, Any]) -> None:
+        """Add the inferred mains state to a reading, in place.
+
+        Must run before the reading is published or stored, so that the API,
+        the database and the alarm engine all see the same value.
+        """
+        try:
+            data["ac_power"] = self.ac_tracker.update(
+                data.get("voltage"), data.get("current")
+            )
+            data["ac_power_since"] = self.ac_tracker.since
+        except Exception:
+            log.exception("Error updating AC power state")
+            data["ac_power"] = None
+            data["ac_power_since"] = None
 
     def _evaluate_alarms(self, data: dict[str, Any]) -> None:
         """Evaluate alarm conditions for the current reading (synchronous)."""

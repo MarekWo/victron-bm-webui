@@ -183,11 +183,23 @@ curl http://localhost:5052/history          # Restart history
 sudo ./install.sh --uninstall              # Remove
 ```
 
+### Mains (AC) Presence Detection
+
+The BMV-712 is a shunt — it has no AC input and cannot report mains presence directly. The state is inferred from what the shunt does measure:
+
+- **Current is the primary signal.** With mains present the charger carries the load and battery current sits at or just above zero. The moment mains drops, the inverter starts drawing from the battery and current goes firmly negative — long before voltage has had time to sag.
+- **Voltage is a secondary check**, with a hysteresis band (`voltage_on` / `voltage_off`) so a brief dip cannot flip the state on its own.
+- **Debounce** requires N consecutive agreeing readings before the state flips (default 2 × `poll_interval_seconds` = 20 s).
+
+Configure under `ac_detection:` in `config/config.yaml` — see `config/config.yaml.example`. Leaving the voltage thresholds at `null` derives them from the legacy `alarms.ac_power_voltage` value, which becomes the restore threshold with the loss threshold 0.2 V below it.
+
+The resulting state is published as `ac_power` (`true` = on mains, `false` = on battery, `null` = not yet known) on `GET /api/v1/status`, stored per reading in the database, and drives the `AC_POWER_LOST` / `AC_POWER_RESTORED` alarms.
+
 ## REST API
 
 | Endpoint              | Description                                      |
 |-----------------------|--------------------------------------------------|
-| `GET /api/v1/status`  | Current device state (voltage, current, SoC, etc.) |
+| `GET /api/v1/status`  | Current device state (voltage, current, SoC, `ac_power`, etc.) |
 | `GET /api/v1/history` | Historical readings (`?from=&to=&fields=&resolution=`) |
 | `GET /api/v1/alarms`  | Alarm log entries (`?from=&to=&limit=`)          |
 | `GET /api/v1/health`  | Health check (uptime, DB stats, BLE status)      |

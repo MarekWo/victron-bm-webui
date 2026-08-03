@@ -7,6 +7,12 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
+
+def _bool_to_int(value: Any) -> int | None:
+    """Map a tri-state boolean to SQLite's 1 / 0 / NULL."""
+    return None if value is None else int(bool(value))
+
+
 SCHEMA_READINGS = """
 CREATE TABLE IF NOT EXISTS readings (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,9 +24,16 @@ CREATE TABLE IF NOT EXISTS readings (
     consumed_ah     REAL,
     remaining_mins  INTEGER,
     temperature     REAL,
-    alarm           TEXT
+    alarm           TEXT,
+    ac_power        INTEGER
 );
 """
+
+# Columns added after the initial release, applied to existing databases by
+# _migrate_schema(). Keep in sync with SCHEMA_READINGS above.
+READINGS_ADDED_COLUMNS = {
+    "ac_power": "INTEGER",
+}
 
 SCHEMA_ALARM_LOG = """
 CREATE TABLE IF NOT EXISTS alarm_log (
@@ -63,10 +76,20 @@ class Database:
             conn.execute(SCHEMA_ALARM_LOG)
             conn.execute(INDEX_READINGS_TS)
             conn.execute(INDEX_ALARM_LOG_TS)
+            self._migrate_schema(conn)
             conn.commit()
             log.info("Database initialized: %s", self.db_path)
         finally:
             conn.close()
+
+    @staticmethod
+    def _migrate_schema(conn: sqlite3.Connection) -> None:
+        """Add columns that CREATE TABLE IF NOT EXISTS cannot add retroactively."""
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(readings)")}
+        for column, coltype in READINGS_ADDED_COLUMNS.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE readings ADD COLUMN {column} {coltype}")
+                log.info("Schema migration: added readings.%s", column)
 
     # -- Readings --
 
@@ -83,8 +106,8 @@ class Database:
             conn.execute(
                 """INSERT INTO readings
                    (timestamp, voltage, current, power, soc,
-                    consumed_ah, remaining_mins, temperature, alarm)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    consumed_ah, remaining_mins, temperature, alarm, ac_power)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     data.get("timestamp", datetime.now(timezone.utc).isoformat()),
                     data.get("voltage"),
@@ -95,6 +118,7 @@ class Database:
                     data.get("remaining_mins"),
                     data.get("temperature"),
                     data.get("alarm"),
+                    _bool_to_int(data.get("ac_power")),
                 ),
             )
             conn.commit()
@@ -138,7 +162,7 @@ class Database:
         """
         allowed_fields = {
             "timestamp", "voltage", "current", "power", "soc",
-            "consumed_ah", "remaining_mins", "temperature", "alarm",
+            "consumed_ah", "remaining_mins", "temperature", "alarm", "ac_power",
         }
         if fields:
             safe_fields = [f for f in fields if f in allowed_fields]
