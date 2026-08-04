@@ -43,6 +43,12 @@ ac_detection:
                               # null = alarms.ac_power_voltage - 0.2, else 13.40
   discharge_current: -1.0     # Amps - at/below this the battery is definitely
                               # carrying the load, regardless of voltage
+  charge_current: 2.0         # Amps - at/above this the mains-fed charger is
+                              # definitely running, so mains is back. Restores
+                              # far faster than waiting for voltage_on out of a
+                              # deep discharge. Set to 0 to disable if an
+                              # independent DC source (solar/MPPT, alternator)
+                              # can also charge the bank.
   debounce_samples: 2         # Consecutive agreeing readings before the state
                               # flips (2 x poll_interval_seconds = 20s default)
 

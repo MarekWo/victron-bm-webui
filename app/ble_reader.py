@@ -145,10 +145,13 @@ class BLEReaderThread(threading.Thread):
         self._consecutive_failures = 0
         self.ac_tracker = ACStateTracker(config)
         log.info(
-            "AC detection: on >= %.2fV, off < %.2fV, discharge <= %.2fA, debounce %d samples",
+            "AC detection: on >= %.2fV, off < %.2fV, discharge <= %.2fA, charge >= %s, "
+            "debounce %d samples",
             self.ac_tracker.voltage_on,
             self.ac_tracker.voltage_off,
             self.ac_tracker.discharge_current,
+            f"{self.ac_tracker.charge_current:.2f}A" if self.ac_tracker.charge_current > 0
+            else "disabled",
             self.ac_tracker.debounce_samples,
         )
 

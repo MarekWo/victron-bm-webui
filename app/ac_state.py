@@ -4,12 +4,24 @@ A BMV-712 is a shunt — it has no AC input and therefore no direct way of
 telling whether mains power is present. The state has to be inferred from
 what the shunt does measure: battery voltage and battery current.
 
-Current is the stronger of the two signals. Whenever mains is present the
-charger carries the load, so battery current sits at or slightly above zero
-(float). The moment mains disappears the inverter starts drawing from the
+Current is the stronger of the two signals, and it is stronger in both
+directions. The moment mains disappears the inverter starts drawing from the
 battery and current goes firmly negative — long before voltage has had time
-to sag. Voltage is used as a secondary confirmation, with a hysteresis band
-so that a brief sag cannot flip the state on its own.
+to sag. The moment mains returns the charger starts pushing current in, which
+is just as unambiguous, and far faster than waiting for terminal voltage to
+climb back over `voltage_on`: measured on a real 60 A cut, loss was confirmed
+in ~30 s but restoration took ~3 minutes, with the charger already delivering
+8.7 A while this tracker still reported "on battery". Out of a deep discharge
+the charger sits in constant-current bulk and that lag grows to tens of
+minutes, which is long enough to shut hosts down after power is already back.
+
+Voltage remains the fallback signal, with a hysteresis band so that a brief
+sag cannot flip the state on its own.
+
+The charge-current rule assumes the only thing charging the bank is a
+mains-fed charger. If an independent DC source can charge it — solar/MPPT,
+an alternator — set `ac_detection.charge_current` to 0 to switch the rule off
+and fall back to voltage alone.
 """
 
 from datetime import datetime, timezone
@@ -20,6 +32,10 @@ DEFAULT_VOLTAGE_ON = 13.55
 DEFAULT_VOLTAGE_OFF = 13.40
 DEFAULT_DISCHARGE_CURRENT = -1.0
 DEFAULT_DEBOUNCE_SAMPLES = 2
+
+# Charging harder than this means a mains-fed charger is running. Set to 0 to
+# disable when an independent DC source (solar/MPPT) can also charge the bank.
+DEFAULT_CHARGE_CURRENT = 2.0
 
 # Width of the hysteresis band derived from a legacy `alarms.ac_power_voltage`.
 LEGACY_HYSTERESIS_VOLTS = 0.2
@@ -66,6 +82,15 @@ def resolve_ac_detection(config: dict[str, Any]) -> dict[str, Any]:
         else DEFAULT_DISCHARGE_CURRENT
     )
 
+    charge_current = detection.get("charge_current")
+    charge_current = (
+        float(charge_current)
+        if charge_current is not None
+        else DEFAULT_CHARGE_CURRENT
+    )
+    # A negative value here would make every discharge read as "mains back".
+    charge_current = max(0.0, charge_current)
+
     debounce = detection.get("debounce_samples")
     debounce = int(debounce) if debounce is not None else DEFAULT_DEBOUNCE_SAMPLES
     debounce = max(1, debounce)
@@ -74,6 +99,7 @@ def resolve_ac_detection(config: dict[str, Any]) -> dict[str, Any]:
         "voltage_on": voltage_on,
         "voltage_off": voltage_off,
         "discharge_current": discharge_current,
+        "charge_current": charge_current,
         "debounce_samples": debounce,
     }
 
@@ -86,6 +112,7 @@ class ACStateTracker:
         self.voltage_on: float = settings["voltage_on"]
         self.voltage_off: float = settings["voltage_off"]
         self.discharge_current: float = settings["discharge_current"]
+        self.charge_current: float = settings["charge_current"]
         self.debounce_samples: int = settings["debounce_samples"]
 
         self._state: bool | None = None  # None = unknown (no usable reading yet)
@@ -150,6 +177,14 @@ class ACStateTracker:
             # Drawing meaningful current out of the battery — mains is gone,
             # regardless of what voltage still reads.
             return False
+
+        if (self.charge_current > 0 and current is not None
+                and current >= self.charge_current):
+            # Something is pushing charge into the bank, and the only thing
+            # that can be is the mains-fed charger. Trusting this instead of
+            # waiting for voltage is what keeps restoration fast out of a deep
+            # discharge, where terminal voltage stays low for a long while.
+            return True
 
         if voltage is None:
             return None

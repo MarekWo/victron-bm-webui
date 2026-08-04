@@ -37,6 +37,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "voltage_on": None,
         "voltage_off": None,
         "discharge_current": -1.0,
+        "charge_current": 2.0,
         "debounce_samples": 2,
     },
     "smtp": {
